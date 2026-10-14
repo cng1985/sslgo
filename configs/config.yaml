@@ -1,0 +1,11 @@
+server:
+  addr: ":8080"
+  mode: release
+database:
+  path: data/sslplatform.db
+auth:
+  jwtSecret: change-me-please-32chars!!
+  tokenTTL: 24h
+acme:
+  directoryURL: https://acme-staging-v02.api.letsencrypt.org/directory
+  timeout: 120s
