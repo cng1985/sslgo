@@ -1,0 +1,22 @@
+services:
+  sslplatform:
+    build: .
+    ports:
+      - "8080:8080"
+      - "80:80"
+    environment:
+      SSL_DATABASE_PATH: /data/sslplatform.db
+      SSL_JWT_SECRET: change-me-please-32chars!!
+      SSL_ADMIN_PASSWORD: Admin@123456
+      SSL_ACME_EMAIL: admin@example.com
+      SSL_BOOTSTRAP_NGINX: "true"
+      SSL_ACME_DIRECTORY: https://acme-staging-v02.api.letsencrypt.org/directory
+    volumes:
+      - ssl-data:/data
+      - ssl-certs:/etc/nginx/ssl
+      - ssl-webroot:/var/www/acme
+
+volumes:
+  ssl-data:
+  ssl-certs:
+  ssl-webroot:
