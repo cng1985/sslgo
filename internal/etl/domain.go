@@ -38,10 +38,19 @@ func normalizeDomains(in []string) ([]string, error) {
 }
 
 func validateDomain(d string) error {
-	if len(d) > 253 || strings.Contains(d, "*") || strings.Contains(d, "/") || !strings.Contains(d, ".") {
-		return apperror.New(400, "域名无效，HTTP-01 不支持通配符、IP 或 localhost："+d)
+	name := d
+	if strings.HasPrefix(name, "*.") {
+		name = name[2:]
+		if name == "" || strings.Contains(name, "*") {
+			return apperror.New(400, "通配符只能出现在最左侧标签："+d)
+		}
+	} else if strings.Contains(name, "*") {
+		return apperror.New(400, "通配符只能出现在最左侧标签："+d)
 	}
-	labels := strings.Split(d, ".")
+	if len(d) > 253 || strings.Contains(d, "/") || !strings.Contains(name, ".") {
+		return apperror.New(400, "域名无效，不支持 IP 或 localhost："+d)
+	}
+	labels := strings.Split(name, ".")
 	for _, label := range labels {
 		if len(label) == 0 || len(label) > 63 {
 			return apperror.New(400, "域名无效："+d)
@@ -72,6 +81,27 @@ func decodeDomains(raw string) []string {
 		return []string{}
 	}
 	return domains
+}
+
+func normalizeChallenge(v string, domains []string) (string, error) {
+	wildcard := false
+	for _, domain := range domains {
+		if strings.HasPrefix(domain, "*.") {
+			wildcard = true
+			break
+		}
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", ChallengeHTTP01:
+		if wildcard {
+			return "", apperror.New(400, "通配符域名需要 DNS-01，请在 ACME 账户绑定云厂商 DNS 后选择 dns-01")
+		}
+		return ChallengeHTTP01, nil
+	case ChallengeDNS01:
+		return ChallengeDNS01, nil
+	default:
+		return "", apperror.New(400, "challengeType 只能是 http-01 或 dns-01")
+	}
 }
 
 func normalizeKeyType(v string) (string, error) {

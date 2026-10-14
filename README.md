@@ -12,7 +12,8 @@ internal/database           SQLite 迁移与初始化
 internal/server             Gin、POST 路由和 HTTP 生命周期
 internal/web                embed 的前端
 internal/auth               登录、JWT、RBAC
-internal/datasource         ACME 账户与 Nginx 目标
+internal/datasource         ACME 账户、云厂商 DNS 与 Nginx 目标
+internal/acme               ACME 账户注册，以及阿里云、腾讯云等 DNS-01
 internal/etl                证书与 Extract -> Transform -> Load
 internal/scheduler          Cron 续期
 internal/task               签发任务
@@ -31,7 +32,7 @@ SQLite 文件默认是 `data/sslplatform.db`，权限 `0600`。启动时自动�
 | 表 | 用途 |
 | --- | --- |
 | tenants, users, roles, permissions, user_roles, role_permissions | 租户和 RBAC |
-| datasources | `acme` 账户或 `nginx` 部署目标 |
+| datasources | `acme` 账户（可绑定云厂商 DNS）或 `nginx` 部署目标 |
 | certificates, etl_jobs | 证书申请和签发流水线 |
 | tasks | 每次执行的阶段和结果 |
 | schedules | 续期计划 |
@@ -45,14 +46,16 @@ SQLite 文件默认是 `data/sslplatform.db`，权限 `0600`。启动时自动�
 一次执行是 `y = f(x)`：
 
 1. **Extract**：按登录态里的租户读取证书、ACME 账户和 Nginx 目标。未进入续期窗口则停止。
-2. **Transform**：用 HTTP-01 webroot 向 Let's Encrypt 申请证书。
+2. **Transform**：按验证方式申请证书。`http-01` 把挑战文件写到 Nginx webroot。`dns-01` 调用 ACME 账户绑定的云厂商 DNS，写入 `_acme-challenge` TXT 记录，因此可以签发通配符。
 3. **Load**：备份旧文件，写入新的 `cert-{id}.crt`、`.key`、`.issuer.crt`，执行 `nginx -t`，再按配置重启或重载 Nginx。检测失败会恢复旧文件。
 
 默认动作是重启。`signal` 模式执行 `nginx -s quit` 后再启动；`systemd` 模式执行 `systemctl restart nginx`。只允许 `nginx`、`systemctl`、`service`，参数按数组传递，不经过 shell。
 
-Nginx 在签发前必须能通过 80 端口提供 `webroot/.well-known/acme-challenge/`。通配符证书需要 DNS-01，当前版本不签发通配符。
+HTTP-01 在签发前必须能通过 80 端口提供 `webroot/.well-known/acme-challenge/`。通配符只能使用 DNS-01，并且 ACME 账户要先绑定云厂商 DNS。
 
-默认 ACME 目录是测试环境。生产目录是 `https://acme-v02.api.letsencrypt.org/directory`。
+创建 ACME 数据源时会生成账户私钥。可以立刻向证书机构注册，也可以稍后调用 `POST /api/v1/datasource/register`。ZeroSSL、Google Trust Services 和 SSL.com 需要外部账号绑定（EAB）。支持的 DNS 包括阿里云、腾讯云 DNS、DNSPod Token、华为云、百度智能云、火山引擎、Amazon Route 53、Azure DNS、Google Cloud DNS、Cloudflare 和 DigitalOcean。`POST /api/v1/datasource/catalog` 返回机构和凭证字段。密钥不会出现在接口响应里，更新时留空表示保留原值。
+
+默认 ACME 目录是 Let's Encrypt 测试环境。生产目录是 `https://acme-v02.api.letsencrypt.org/directory`。DNS-01 会等待解析生效，耗时通常长于 HTTP-01。
 
 ## 接口
 

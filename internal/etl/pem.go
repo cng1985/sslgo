@@ -39,37 +39,12 @@ func formatFingerprint(sum []byte) string {
 	return b.String()
 }
 
-func newAccountKeyPEM() (string, error) {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return "", err
-	}
-	return marshalKeyPEM(key)
-}
-
 func marshalKeyPEM(key crypto.PrivateKey) (string, error) {
 	raw, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return "", err
 	}
 	return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: raw})), nil
-}
-
-func parsePrivateKey(raw []byte) (crypto.PrivateKey, error) {
-	block, _ := pem.Decode(raw)
-	if block == nil {
-		return nil, fmt.Errorf("私钥 PEM 无效")
-	}
-	if key, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
-		return key.(crypto.PrivateKey), nil
-	}
-	if key, err := x509.ParseECPrivateKey(block.Bytes); err == nil {
-		return key, nil
-	}
-	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
-		return key, nil
-	}
-	return nil, fmt.Errorf("无法解析私钥")
 }
 
 // MintSelfSigned 生成仅用于测试替身的自签证书，不会被浏览器信任。

@@ -142,6 +142,45 @@ func TestPlatformFlow(t *testing.T) {
 		t.Fatal("跳过续期时不应重启 Nginx")
 	}
 
+	providerCatalog := decodeData(t, mustPost(t, base, "/api/v1/datasource/catalog", token, map[string]any{}, 200))
+	foundAliyun := false
+	for _, item := range providerCatalog["dnsProviders"].([]any) {
+		if item.(map[string]any)["id"] == "aliyun" {
+			foundAliyun = true
+		}
+	}
+	if !foundAliyun || len(providerCatalog["cas"].([]any)) < 2 {
+		t.Fatalf("catalog=%v", providerCatalog)
+	}
+	mustPost(t, base, "/api/v1/certificate/create", token, map[string]any{
+		"name": "缺少 DNS", "domains": []string{"*.example.com"}, "challengeType": "dns-01", "agreeTos": true,
+		"acmeDataSourceId": acme["id"], "nginxDataSourceId": nginx["id"],
+	}, 400)
+	cloud := decodeData(t, mustPost(t, base, "/api/v1/datasource/create", token, map[string]any{
+		"name": "aliyun", "type": "acme",
+		"config": map[string]any{
+			"email": "admin@example.com", "ca": "letsencrypt-staging", "dnsProvider": "aliyun",
+			"dns": map[string]any{"accessKeyId": "LTAItest", "accessKeySecret": "secret-value"},
+		},
+	}, 200))
+	if strings.Contains(mustJSON(cloud["config"]), "secret-value") || strings.Contains(mustJSON(cloud["config"]), "accountKeyPEM") {
+		t.Fatal("云厂商密钥或账户私钥不应出现在响应中")
+	}
+	wild := decodeData(t, mustPost(t, base, "/api/v1/certificate/create", token, map[string]any{
+		"name": "通配符", "domains": []string{"*.example.com", "example.com"}, "challengeType": "dns-01",
+		"agreeTos": true, "acmeDataSourceId": cloud["id"], "nginxDataSourceId": nginx["id"],
+	}, 200))
+	if wild["challengeType"] != "dns-01" {
+		t.Fatalf("challenge=%v", wild["challengeType"])
+	}
+	wildTask := decodeData(t, mustPost(t, base, "/api/v1/certificate/issue", token, map[string]any{
+		"id": wild["id"], "force": true,
+	}, 200))
+	wildResult := waitTask(t, base, token, wildTask["id"])
+	if wildResult["status"] != "success" {
+		t.Fatalf("通配符签发失败: %+v", wildResult)
+	}
+
 	page := mustPost(t, base, "/api/v1/query/search", token, map[string]any{
 		"model": "pageCertificate", "page": 1, "size": 20, "keyword": "example.com", "filters": map[string]any{},
 	}, 200)

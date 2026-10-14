@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"sslplatform/internal/acme"
 	"sslplatform/internal/common/apperror"
 	"sslplatform/internal/common/proc"
 	"sslplatform/internal/config"
@@ -17,23 +17,31 @@ import (
 )
 
 type Service struct {
-	repo *Repository
-	cfg  *config.Config
-	http *http.Client
+	repo     *Repository
+	cfg      *config.Config
+	http     *http.Client
+	register func(context.Context, acme.RegisterRequest) (*acme.RegisterResult, error)
 }
 
 func NewService(repo *Repository, cfg *config.Config) *Service {
 	return &Service{
-		repo: repo,
-		cfg:  cfg,
-		http: &http.Client{Timeout: 8 * time.Second},
+		repo:     repo,
+		cfg:      cfg,
+		http:     &http.Client{Timeout: 8 * time.Second},
+		register: acme.Register,
 	}
 }
 
 func (s *Service) Create(ctx context.Context, tenantID uint, req CreateRequest) (*View, error) {
-	raw, err := s.normalize(req.Type, req.Config, "")
+	raw, register, err := s.normalize(req.Type, req.Config, "")
 	if err != nil {
 		return nil, err
+	}
+	if register {
+		raw, err = s.registerACME(ctx, raw)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, apperror.New(400, "请填写数据源名称")
@@ -70,9 +78,15 @@ func (s *Service) Update(ctx context.Context, tenantID uint, req UpdateRequest) 
 		item.Status = req.Status
 	}
 	if req.Config != nil {
-		raw, err := s.normalize(item.Type, req.Config, item.ConfigJSON)
+		raw, register, err := s.normalize(item.Type, req.Config, item.ConfigJSON)
 		if err != nil {
 			return nil, err
+		}
+		if register {
+			raw, err = s.registerACME(ctx, raw)
+			if err != nil {
+				return nil, err
+			}
 		}
 		item.ConfigJSON = raw
 	}
@@ -165,10 +179,89 @@ func (s *Service) testACME(ctx context.Context, cfg ACMEConfig) (*TestView, erro
 		return &TestView{OK: false, Message: "ACME 目录响应异常"}, nil
 	}
 	msg := "ACME 目录可用"
-	if strings.Contains(cfg.DirectoryURL, "staging") {
+	if strings.Contains(cfg.DirectoryURL, "staging") || strings.Contains(cfg.DirectoryURL, "test4.buypass") {
 		msg += "（测试环境，浏览器不会信任该证书）"
 	}
+	if cfg.RegistrationURI != "" {
+		msg += "，账户已注册"
+	} else {
+		msg += "，账户尚未注册"
+	}
+	if cfg.DNSProvider != "" {
+		msg += "，已绑定" + acme.DNSName(cfg.DNSProvider)
+	}
 	return &TestView{OK: true, Message: msg}, nil
+}
+
+// Register 向证书机构注册已保存的 ACME 账户。
+func (s *Service) Register(ctx context.Context, tenantID uint, req RegisterAccountRequest) (*View, error) {
+	item, err := s.repo.Get(ctx, tenantID, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	if item.Type != TypeACME {
+		return nil, apperror.New(400, "只有 ACME 数据源可以注册账户")
+	}
+	cfg, err := ParseACME(item.ConfigJSON)
+	if err != nil {
+		return nil, err
+	}
+	if req.AgreeTOS {
+		cfg.TermsAgreed = true
+	}
+	if !cfg.TermsAgreed {
+		return nil, apperror.New(400, "必须同意 ACME 服务条款")
+	}
+	if cfg.RegistrationURI != "" {
+		return toView(item)
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, err
+	}
+	rawText, err := s.registerACME(ctx, string(raw))
+	if err != nil {
+		return nil, err
+	}
+	item.ConfigJSON = rawText
+	if err := s.repo.Save(ctx, item); err != nil {
+		return nil, err
+	}
+	return toView(item)
+}
+
+func (s *Service) registerACME(ctx context.Context, raw string) (string, error) {
+	cfg, err := ParseACME(raw)
+	if err != nil {
+		return "", err
+	}
+	if !cfg.TermsAgreed {
+		return "", apperror.New(400, "注册 ACME 账户前必须同意服务条款")
+	}
+	if acme.RequiresEAB(cfg.CA, cfg.DirectoryURL) && (strings.TrimSpace(cfg.EABKID) == "" || strings.TrimSpace(cfg.EABHMACKey) == "") {
+		return "", apperror.New(400, "该证书机构需要外部账号绑定，请填写 EAB Kid 和 HMAC Key")
+	}
+	if s.register == nil {
+		return "", apperror.New(500, "ACME 注册器未配置")
+	}
+	result, err := s.register(ctx, acme.RegisterRequest{
+		Email:         cfg.Email,
+		DirectoryURL:  cfg.DirectoryURL,
+		AccountKeyPEM: cfg.AccountKeyPEM,
+		EABKID:        cfg.EABKID,
+		EABHMACKey:    cfg.EABHMACKey,
+		Timeout:       s.cfg.ACME.Timeout,
+	})
+	if err != nil {
+		return "", apperror.New(502, "注册 ACME 账户失败："+err.Error())
+	}
+	cfg.AccountKeyPEM = result.AccountKeyPEM
+	cfg.RegistrationURI = result.RegistrationURI
+	encoded, err := json.Marshal(cfg)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
 }
 
 func testNginx(ctx context.Context, cfg NginxConfig) (*TestView, error) {
@@ -198,53 +291,154 @@ func testNginx(ctx context.Context, cfg NginxConfig) (*TestView, error) {
 	return &TestView{OK: true, Message: "Nginx 配置检测通过"}, nil
 }
 
-func (s *Service) normalize(kind string, config map[string]any, previous string) (string, error) {
+func (s *Service) normalize(kind string, config map[string]any, previous string) (string, bool, error) {
 	if config == nil {
-		return "", apperror.New(400, "请填写 config")
+		return "", false, apperror.New(400, "请填写 config")
 	}
 	switch kind {
 	case TypeACME:
-		cfg, err := decodeACME(config)
+		cfg, register, err := s.normalizeACME(config, previous)
 		if err != nil {
-			return "", err
-		}
-		if strings.TrimSpace(cfg.AccountKeyPEM) == "" && previous != "" {
-			old, err := ParseACME(previous)
-			if err == nil {
-				cfg.AccountKeyPEM = old.AccountKeyPEM
-				if cfg.RegistrationURI == "" {
-					cfg.RegistrationURI = old.RegistrationURI
-				}
-			}
-		}
-		if err := validateACME(cfg, s.cfg.ACME.DirectoryURL); err != nil {
-			return "", err
-		}
-		if cfg.DirectoryURL == "" {
-			cfg.DirectoryURL = s.cfg.ACME.DirectoryURL
+			return "", false, err
 		}
 		raw, err := json.Marshal(cfg)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
-		return string(raw), nil
+		return string(raw), register, nil
 	case TypeNginx:
 		cfg, err := decodeNginx(config)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		cfg, err = validateNginx(cfg)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		raw, err := json.Marshal(cfg)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
-		return string(raw), nil
+		return string(raw), false, nil
 	default:
-		return "", apperror.New(400, "数据源类型只能是 acme 或 nginx")
+		return "", false, apperror.New(400, "数据源类型只能是 acme 或 nginx")
 	}
+}
+
+func (s *Service) normalizeACME(config map[string]any, previous string) (ACMEConfig, bool, error) {
+	register := boolValue(config["register"])
+	delete(config, "register")
+	_, providerSet := config["dnsProvider"]
+	cfg, err := decodeACME(config)
+	if err != nil {
+		return ACMEConfig{}, false, err
+	}
+	var old ACMEConfig
+	if previous != "" {
+		if old, err = ParseACME(previous); err != nil {
+			return ACMEConfig{}, false, err
+		}
+		cfg = mergeACME(cfg, old, providerSet)
+	}
+	ca, directory, _, err := acme.ResolveCA(cfg.CA, cfg.DirectoryURL, s.cfg.ACME.DirectoryURL)
+	if err != nil {
+		return ACMEConfig{}, false, apperror.New(400, err.Error())
+	}
+	cfg.CA = ca
+	cfg.DirectoryURL = directory
+	if previous != "" && strings.TrimRight(old.DirectoryURL, "/") != strings.TrimRight(cfg.DirectoryURL, "/") {
+		cfg.RegistrationURI = ""
+	}
+	cfg.Email = strings.TrimSpace(cfg.Email)
+	if !strings.Contains(cfg.Email, "@") || strings.ContainsAny(cfg.Email, " \t\r\n") {
+		return ACMEConfig{}, false, apperror.New(400, "请填写有效的 ACME 邮箱")
+	}
+	cfg.DNSProvider = strings.TrimSpace(cfg.DNSProvider)
+	if cfg.DNSProvider == "none" {
+		cfg.DNSProvider = ""
+	}
+	cfg.DNS = trimDNS(cfg.DNS)
+	if cfg.DNSProvider == "" {
+		cfg.DNS = nil
+	}
+	if err := acme.ValidateDNS(cfg.DNSProvider, cfg.DNS); err != nil {
+		return ACMEConfig{}, false, apperror.New(400, err.Error())
+	}
+	if strings.TrimSpace(cfg.AccountKeyPEM) == "" {
+		key, err := acme.GenerateAccountKeyPEM()
+		if err != nil {
+			return ACMEConfig{}, false, err
+		}
+		cfg.AccountKeyPEM = key
+	}
+	cfg.EABKID = strings.TrimSpace(cfg.EABKID)
+	cfg.EABHMACKey = strings.TrimSpace(cfg.EABHMACKey)
+	return cfg, register, nil
+}
+
+func mergeACME(cfg, old ACMEConfig, providerSet bool) ACMEConfig {
+	if strings.TrimSpace(cfg.Email) == "" {
+		cfg.Email = old.Email
+	}
+	if strings.TrimSpace(cfg.CA) == "" && strings.TrimSpace(cfg.DirectoryURL) == "" {
+		cfg.CA = old.CA
+		cfg.DirectoryURL = old.DirectoryURL
+	}
+	newKey := strings.TrimSpace(cfg.AccountKeyPEM)
+	oldKey := strings.TrimSpace(old.AccountKeyPEM)
+	keyChanged := newKey != "" && oldKey != "" && newKey != oldKey
+	if newKey == "" {
+		cfg.AccountKeyPEM = old.AccountKeyPEM
+	}
+	if strings.TrimSpace(cfg.EABHMACKey) == "" {
+		cfg.EABHMACKey = old.EABHMACKey
+	}
+	if strings.TrimSpace(cfg.EABKID) == "" {
+		cfg.EABKID = old.EABKID
+	}
+	if !cfg.TermsAgreed {
+		cfg.TermsAgreed = old.TermsAgreed
+	}
+	if !providerSet {
+		cfg.DNSProvider = old.DNSProvider
+		if len(cfg.DNS) == 0 {
+			cfg.DNS = old.DNS
+		}
+	}
+	if cfg.DNSProvider == old.DNSProvider && cfg.DNSProvider != "" {
+		if cfg.DNS == nil {
+			cfg.DNS = map[string]string{}
+		}
+		for _, name := range acme.SecretFields(cfg.DNSProvider) {
+			if strings.TrimSpace(cfg.DNS[name]) == "" && old.DNS != nil {
+				cfg.DNS[name] = old.DNS[name]
+			}
+		}
+	}
+	directoryChanged := strings.TrimSpace(cfg.DirectoryURL) != "" &&
+		strings.TrimRight(strings.TrimSpace(cfg.DirectoryURL), "/") != strings.TrimRight(strings.TrimSpace(old.DirectoryURL), "/")
+	if keyChanged || directoryChanged {
+		cfg.RegistrationURI = ""
+	} else if cfg.RegistrationURI == "" {
+		cfg.RegistrationURI = old.RegistrationURI
+	}
+	return cfg
+}
+
+func trimDNS(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		out[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+	return out
+}
+
+func boolValue(v any) bool {
+	flag, ok := v.(bool)
+	return ok && flag
 }
 
 func decodeACME(config map[string]any) (ACMEConfig, error) {
@@ -269,21 +463,6 @@ func decodeNginx(config map[string]any) (NginxConfig, error) {
 		return NginxConfig{}, apperror.New(400, "Nginx 配置无效")
 	}
 	return cfg, nil
-}
-
-func validateACME(cfg ACMEConfig, fallback string) error {
-	if !strings.Contains(cfg.Email, "@") || strings.ContainsAny(cfg.Email, " \t\r\n") {
-		return apperror.New(400, "请填写有效的 ACME 邮箱")
-	}
-	directory := cfg.DirectoryURL
-	if directory == "" {
-		directory = fallback
-	}
-	u, err := url.Parse(directory)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		return apperror.New(400, "ACME 目录地址无效")
-	}
-	return nil
 }
 
 func validateNginx(cfg NginxConfig) (NginxConfig, error) {
@@ -337,13 +516,9 @@ func ParseNginx(raw string) (NginxConfig, error) {
 }
 
 func toView(item *DataSource) (*View, error) {
-	cfg := map[string]any{}
-	if err := json.Unmarshal([]byte(item.ConfigJSON), &cfg); err != nil {
+	cfg, err := publicConfig(item.ConfigJSON)
+	if err != nil {
 		return nil, err
-	}
-	if _, ok := cfg["accountKeyPEM"]; ok {
-		cfg["accountKeyStored"] = true
-		delete(cfg, "accountKeyPEM")
 	}
 	return &View{
 		ID: item.ID, Name: item.Name, Type: item.Type, Description: item.Description,
@@ -352,19 +527,51 @@ func toView(item *DataSource) (*View, error) {
 	}, nil
 }
 
-// SanitizeConfigJSON 给通用查询去掉账户私钥。
+// SanitizeConfigJSON 给通用查询去掉账户私钥和云厂商密钥。
 func SanitizeConfigJSON(raw string) string {
-	var cfg map[string]any
-	if json.Unmarshal([]byte(raw), &cfg) != nil {
+	cfg, err := publicConfig(raw)
+	if err != nil {
 		return raw
-	}
-	if _, ok := cfg["accountKeyPEM"]; ok {
-		cfg["accountKeyStored"] = true
-		delete(cfg, "accountKeyPEM")
 	}
 	b, err := json.Marshal(cfg)
 	if err != nil {
 		return raw
 	}
 	return string(b)
+}
+
+func publicConfig(raw string) (map[string]any, error) {
+	cfg := map[string]any{}
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return nil, err
+	}
+	if pem, _ := cfg["accountKeyPEM"].(string); pem != "" {
+		cfg["accountKeyStored"] = true
+		delete(cfg, "accountKeyPEM")
+	}
+	if hmacKey, _ := cfg["eabHmacKey"].(string); hmacKey != "" {
+		cfg["eabHmacStored"] = true
+		delete(cfg, "eabHmacKey")
+	}
+	if uri, _ := cfg["registrationURI"].(string); uri != "" {
+		cfg["accountRegistered"] = true
+	}
+	provider, _ := cfg["dnsProvider"].(string)
+	dns, _ := cfg["dns"].(map[string]any)
+	if dns != nil {
+		stored := make([]string, 0)
+		for _, name := range acme.SecretFields(provider) {
+			if value, _ := dns[name].(string); value != "" {
+				stored = append(stored, name)
+				delete(dns, name)
+			}
+		}
+		if len(stored) > 0 {
+			cfg["dnsSecretStored"] = stored
+		}
+		if len(dns) == 0 {
+			delete(cfg, "dns")
+		}
+	}
+	return cfg, nil
 }

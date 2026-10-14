@@ -13,6 +13,7 @@ import (
 	"github.com/go-acme/lego/v4/providers/http/webroot"
 	"github.com/go-acme/lego/v4/registration"
 
+	"sslplatform/internal/acme"
 	"sslplatform/internal/common/apperror"
 )
 
@@ -22,8 +23,13 @@ type IssueRequest struct {
 	DirectoryURL    string
 	AccountKeyPEM   string
 	RegistrationURI string
+	EABKID          string
+	EABHMACKey      string
 	Domains         []string
 	Webroot         string
+	Challenge       string
+	DNSProvider     string
+	DNS             map[string]string
 	KeyType         string
 	Timeout         time.Duration
 	AgreeTOS        bool
@@ -65,7 +71,8 @@ func (i *LegoIssuer) Obtain(ctx context.Context, req IssueRequest) (*IssuedCerti
 	if !req.AgreeTOS {
 		return nil, apperror.New(400, "必须同意 Let's Encrypt 服务条款")
 	}
-	if req.Webroot == "" {
+	dnsChallenge := req.Challenge == "dns-01"
+	if !dnsChallenge && req.Webroot == "" {
 		return nil, apperror.New(400, "Nginx 数据源未配置 webroot")
 	}
 	if len(req.Domains) == 0 {
@@ -73,13 +80,13 @@ func (i *LegoIssuer) Obtain(ctx context.Context, req IssueRequest) (*IssuedCerti
 	}
 	keyPEM := req.AccountKeyPEM
 	if keyPEM == "" {
-		generated, err := newAccountKeyPEM()
+		generated, err := acme.GenerateAccountKeyPEM()
 		if err != nil {
 			return nil, err
 		}
 		keyPEM = generated
 	}
-	priv, err := parsePrivateKey([]byte(keyPEM))
+	priv, err := acme.ParsePrivateKey([]byte(keyPEM))
 	if err != nil {
 		return nil, apperror.Wrap(400, "ACME 账户密钥无效", err)
 	}
@@ -105,18 +112,40 @@ func (i *LegoIssuer) Obtain(ctx context.Context, req IssueRequest) (*IssuedCerti
 		return nil, fmt.Errorf("创建 ACME 客户端失败: %w", err)
 	}
 	if user.reg == nil {
-		resource, err := client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
+		var resource *registration.Resource
+		if req.EABKID != "" || req.EABHMACKey != "" {
+			if req.EABKID == "" || req.EABHMACKey == "" {
+				return nil, apperror.New(400, "外部账号绑定需要同时填写 EAB Kid 和 HMAC Key")
+			}
+			resource, err = client.Registration.RegisterWithExternalAccountBinding(registration.RegisterEABOptions{
+				TermsOfServiceAgreed: true,
+				Kid:                  req.EABKID,
+				HmacEncoded:          req.EABHMACKey,
+			})
+		} else {
+			resource, err = client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
+		}
 		if err != nil {
 			return nil, fmt.Errorf("注册 ACME 账户失败: %w", err)
 		}
 		user.reg = resource
 	}
-	provider, err := webroot.NewHTTPProvider(req.Webroot)
-	if err != nil {
-		return nil, err
-	}
-	if err := client.Challenge.SetHTTP01Provider(provider); err != nil {
-		return nil, err
+	if dnsChallenge {
+		provider, err := acme.NewDNSProvider(req.DNSProvider, req.DNS)
+		if err != nil {
+			return nil, apperror.New(400, "DNS 服务商不可用："+err.Error())
+		}
+		if err := client.Challenge.SetDNS01Provider(provider); err != nil {
+			return nil, err
+		}
+	} else {
+		provider, err := webroot.NewHTTPProvider(req.Webroot)
+		if err != nil {
+			return nil, err
+		}
+		if err := client.Challenge.SetHTTP01Provider(provider); err != nil {
+			return nil, err
+		}
 	}
 	obtained, err := client.Certificate.Obtain(certificate.ObtainRequest{
 		Domains: req.Domains,
@@ -156,7 +185,7 @@ func (m *MemoryIssuer) Obtain(ctx context.Context, req IssueRequest) (*IssuedCer
 	}
 	account := req.AccountKeyPEM
 	if account == "" {
-		account, err = newAccountKeyPEM()
+		account, err = acme.GenerateAccountKeyPEM()
 		if err != nil {
 			return nil, err
 		}

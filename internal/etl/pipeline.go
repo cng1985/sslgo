@@ -162,9 +162,11 @@ func (s *ETLService) extract(ctx context.Context, data *ETLContext) error {
 	if err != nil {
 		return err
 	}
-	info, err := os.Stat(nginxCfg.Webroot)
-	if err != nil || !info.IsDir() {
-		return apperror.New(400, "ACME webroot 不存在，请先准备 Nginx 的 HTTP-01 目录")
+	if cert.ChallengeType != ChallengeDNS01 {
+		info, err := os.Stat(nginxCfg.Webroot)
+		if err != nil || !info.IsDir() {
+			return apperror.New(400, "ACME webroot 不存在，请先准备 Nginx 的 HTTP-01 目录")
+		}
 	}
 	domains := decodeDomains(cert.DomainsJSON)
 	if !data.Pipeline.Force && !cert.AutoRenew && data.Pipeline.Trigger == "schedule" {
@@ -208,8 +210,13 @@ func (s *ETLService) transform(ctx context.Context, data *ETLContext) error {
 		DirectoryURL:    data.Input.ACMEConfig.DirectoryURL,
 		AccountKeyPEM:   data.Input.ACMEConfig.AccountKeyPEM,
 		RegistrationURI: data.Input.ACMEConfig.RegistrationURI,
+		EABKID:          data.Input.ACMEConfig.EABKID,
+		EABHMACKey:      data.Input.ACMEConfig.EABHMACKey,
 		Domains:         data.Input.Domains,
 		Webroot:         data.Input.NginxConfig.Webroot,
+		Challenge:       data.Input.Certificate.ChallengeType,
+		DNSProvider:     data.Input.ACMEConfig.DNSProvider,
+		DNS:             data.Input.ACMEConfig.DNS,
 		KeyType:         data.Input.Certificate.KeyType,
 		Timeout:         s.cfg.ACME.Timeout,
 		AgreeTOS:        data.Input.Certificate.AgreeTOS,

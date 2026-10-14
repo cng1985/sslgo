@@ -14,6 +14,7 @@ const (
 	StatusFailed   = "failed"
 
 	ChallengeHTTP01 = "http-01"
+	ChallengeDNS01  = "dns-01"
 	KeyEC256        = "ec256"
 	KeyRSA2048      = "rsa2048"
 	PipelineIssue   = "ssl_issue"
@@ -64,6 +65,7 @@ type CertificateCreateRequest struct {
 	Name              string   `json:"name"`
 	Domains           []string `json:"domains"`
 	Email             string   `json:"email"`
+	ChallengeType     string   `json:"challengeType"`
 	KeyType           string   `json:"keyType"`
 	ACMEDataSourceID  uint     `json:"acmeDataSourceId"`
 	NginxDataSourceID uint     `json:"nginxDataSourceId"`
@@ -77,6 +79,7 @@ type CertificateUpdateRequest struct {
 	Name              string   `json:"name"`
 	Domains           []string `json:"domains"`
 	Email             string   `json:"email"`
+	ChallengeType     string   `json:"challengeType"`
 	KeyType           string   `json:"keyType"`
 	ACMEDataSourceID  uint     `json:"acmeDataSourceId"`
 	NginxDataSourceID uint     `json:"nginxDataSourceId"`

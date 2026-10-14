@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h1>证书</h1>
-        <p>申请 Let's Encrypt 证书，替换旧文件，并按数据源配置重启 Nginx。</p>
+        <p>用 ACME 账户申请证书。HTTP-01 走 Nginx 目录，DNS-01 走账户绑定的云厂商，可签发通配符。</p>
       </div>
       <el-button v-if="auth.can('certificate:create')" type="primary" @click="openCreate">新建证书</el-button>
     </div>
@@ -42,7 +42,14 @@
     <el-dialog v-model="open" title="新建证书" width="560px">
       <el-form label-position="top">
         <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
-        <el-form-item label="域名，多个用空格或换行分隔"><el-input v-model="form.domainText" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item label="域名，多个用空格或换行分隔"><el-input v-model="form.domainText" type="textarea" :rows="3" placeholder="example.com &#10;*.example.com" /></el-form-item>
+        <el-form-item label="验证方式">
+          <el-radio-group v-model="form.challengeType">
+            <el-radio value="http-01">HTTP-01</el-radio>
+            <el-radio value="dns-01">DNS-01</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <p v-if="form.challengeType === 'dns-01'" class="hint">DNS-01 使用 ACME 账户里绑定的云厂商 DNS。通配符只能走这条路径。</p>
         <el-form-item label="ACME 数据源">
           <el-select v-model="form.acmeDataSourceId" style="width: 100%">
             <el-option v-for="item in acmeSources" :key="item.id" :label="item.name" :value="item.id" />
@@ -72,7 +79,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '../api/http'
 import { useAuthStore } from '../stores/auth'
@@ -91,7 +98,7 @@ const sources = ref([])
 const statuses = ['draft', 'issuing', 'deployed', 'failed']
 const form = reactive({
   name: '', domainText: '', acmeDataSourceId: null, nginxDataSourceId: null,
-  keyType: 'ec256', renewBeforeDays: 30, autoRenew: true, agreeTos: false
+  challengeType: 'http-01', keyType: 'ec256', renewBeforeDays: 30, autoRenew: true, agreeTos: false
 })
 const acmeSources = computed(() => sources.value.filter((item) => item.type === 'acme'))
 const nginxSources = computed(() => sources.value.filter((item) => item.type === 'nginx'))
@@ -116,9 +123,16 @@ async function loadSources() {
 }
 
 function openCreate() {
-  Object.assign(form, { name: '', domainText: '', acmeDataSourceId: null, nginxDataSourceId: null, keyType: 'ec256', renewBeforeDays: 30, autoRenew: true, agreeTos: false })
+  Object.assign(form, {
+    name: '', domainText: '', acmeDataSourceId: null, nginxDataSourceId: null,
+    challengeType: 'http-01', keyType: 'ec256', renewBeforeDays: 30, autoRenew: true, agreeTos: false
+  })
   open.value = true
 }
+
+watch(() => form.domainText, (value) => {
+  if (value.includes('*.')) form.challengeType = 'dns-01'
+})
 
 async function create() {
   await http.post('/certificate/create', {

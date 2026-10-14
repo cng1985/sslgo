@@ -36,6 +36,9 @@ func MigrateAndSeed(db *gorm.DB, cfg *config.Config) error {
 	if err := ensurePermissions(db); err != nil {
 		return err
 	}
+	if err := syncBuiltinGrants(db); err != nil {
+		return err
+	}
 	var users int64
 	if err := db.Model(&auth.User{}).Count(&users).Error; err != nil {
 		return err
@@ -68,6 +71,45 @@ func ensurePermissions(db *gorm.DB) error {
 		}
 		if err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// syncBuiltinGrants 给已有的内置角色补上新版本增加的权限。
+func syncBuiltinGrants(db *gorm.DB) error {
+	var roles []auth.Role
+	if err := db.Where("built_in = ?", true).Find(&roles).Error; err != nil {
+		return err
+	}
+	var perms []auth.Permission
+	if err := db.Find(&perms).Error; err != nil {
+		return err
+	}
+	byKey := map[string]uint{}
+	for _, perm := range perms {
+		byKey[perm.Key()] = perm.ID
+	}
+	for _, role := range roles {
+		var existing []auth.RolePermission
+		if err := db.Where("role_id = ?", role.ID).Find(&existing).Error; err != nil {
+			return err
+		}
+		have := map[uint]struct{}{}
+		for _, item := range existing {
+			have[item.PermissionID] = struct{}{}
+		}
+		for key := range auth.BuiltinGrants(role.Code) {
+			pid, ok := byKey[key]
+			if !ok {
+				continue
+			}
+			if _, ok := have[pid]; ok {
+				continue
+			}
+			if err := db.Create(&auth.RolePermission{RoleID: role.ID, PermissionID: pid}).Error; err != nil {
+				return err
+			}
 		}
 	}
 	return nil
