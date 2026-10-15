@@ -39,6 +39,26 @@ export function statusType(status) {
   return map[status] || 'info'
 }
 
+export function certificateFileBase(domains, fallback = 'certificate') {
+  const list = Array.isArray(domains) ? domains : []
+  const raw = list.map((item) => String(item || '').trim()).find(Boolean) || ''
+  const base = raw.replace(/^\*\./, '').toLowerCase()
+  const safe = base.replace(/[^a-z0-9._-]+/g, '_')
+  return safe || fallback
+}
+
+export function certificateFiles(material) {
+  const cert = String(material?.certPem || '').trim()
+  const issuer = String(material?.issuerPem || '').trim()
+  const key = String(material?.keyPem || '').trim()
+  let pem = cert
+  if (issuer && !cert.includes(issuer)) pem = `${cert}\n${issuer}`
+  return {
+    pem: pem ? `${pem}\n` : '',
+    key: key ? `${key}\n` : ''
+  }
+}
+
 export function statusText(status) {
   const map = {
     deployed: '已部署',
