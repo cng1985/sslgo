@@ -20,18 +20,30 @@
         <el-table-column label="域名" min-width="200">
           <template #default="{ row }"><span class="mono">{{ row.domains.join(' ') }}</span></template>
         </el-table-column>
-        <el-table-column label="到期" width="170">
-          <template #default="{ row }">{{ fmt(row.notAfter) }}</template>
+        <el-table-column label="到期" min-width="210">
+          <template #default="{ row }">
+            <div>{{ fmt(row.notAfter) }}</div>
+            <div v-if="row.notAfter" class="expire" :class="expireClass(row)">{{ remainText(row.daysRemaining, row.notAfter) }}</div>
+          </template>
         </el-table-column>
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" width="340">
+        <el-table-column label="操作" width="460">
           <template #default="{ row }">
             <el-button v-if="auth.can('certificate:apply')" link type="primary" @click="apply(row)">申请</el-button>
             <el-button v-if="auth.can('certificate:issue') && row.nginxDataSourceId" link type="primary" @click="issue(row)">签发并部署</el-button>
             <el-button v-if="canDeploy(row)" link @click="deploy(row)">{{ row.status === 'deployed' ? '重启 Nginx' : '部署' }}</el-button>
-            <el-button v-if="canDownload(row)" link @click="download(row)">下载</el-button>
+            <el-dropdown v-if="canDownload(row)" trigger="click" @command="(format) => download(row, format)">
+              <el-button link type="primary">下载</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="nginx">Nginx（fullchain + key）</el-dropdown-item>
+                  <el-dropdown-item command="httpd">httpd（crt + key + chain）</el-dropdown-item>
+                  <el-dropdown-item command="iis">IIS（PFX）</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <el-button v-if="auth.can('certificate:delete')" link type="danger" @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -187,6 +199,53 @@ async function finishTask(id) {
   load()
 }
 
+const bundleNames = { nginx: 'Nginx', httpd: 'httpd', iis: 'IIS' }
+
+function expireClass(row) {
+  const text = remainText(row.daysRemaining, row.notAfter)
+  if (text.startsWith('已过期')) return 'bad'
+  const days = Number(row.daysRemaining)
+  if (!Number.isNaN(days) && days <= 30) return 'warn'
+  return 'ok'
+}
+
+async function download(row, format) {
+  let password = ''
+  if (format === 'iis') {
+    try {
+      const res = await ElMessageBox.prompt('IIS 导入 PFX 需要密码，8 到 64 位。', '下载 IIS 证书', {
+        inputType: 'password',
+        inputPlaceholder: '设置导入密码',
+        confirmButtonText: '下载',
+        cancelButtonText: '取消',
+        inputValidator: (value) => {
+          const text = value || ''
+          if (text.length < 8 || text.length > 64) return '密码需要 8 到 64 位'
+          return true
+        }
+      })
+      password = res.value
+    } catch {
+      return
+    }
+  }
+  const body = await http.post('/certificate/download', { id: row.id, format, password })
+  const data = body.data
+  const bin = atob(data.contentBase64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  const blob = new Blob([bytes], { type: data.contentType || 'application/zip' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = data.filename || `${row.name}-${format}.zip`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+  ElMessage.success(`${bundleNames[format] || ''} 证书已下载`)
+}
+
 async function deploy(row) {
   const title = row.status === 'deployed' ? '重启 Nginx' : '部署到 Nginx'
   const message = row.status === 'deployed'
@@ -213,8 +272,17 @@ async function download(row) {
   link.href = url
   link.download = bundle.filename
   link.click()
-  URL.revokeObjectURL(url)
-  ElMessage.success('证书已下载')
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1500)
+}
+
+async function download(row) {
+  const body = await http.post('/certificate/download', { id: row.id })
+  const base = certificateFileBase(row.domains)
+  const files = certificateFiles(body.data)
+  saveTextFile(`${base}.pem`, files.pem)
+  saveTextFile(`${base}.key`, files.key)
+  ElMessage.success(`已下载 ${base}.pem 和 ${base}.key`)
 }
 
 async function remove(row) {

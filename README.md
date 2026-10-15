@@ -55,7 +55,7 @@ SQLite 文件默认是 `data/sslplatform.db`，权限 `0600`。启动时自动�
 
 - `POST /api/v1/certificate/apply`：只向 ACME 申请。
 - `POST /api/v1/certificate/issue`：申请并部署，证书必须已绑定 Nginx。
-- `POST /api/v1/certificate/download`：取回证书、私钥和颁发者证书。
+- `POST /api/v1/certificate/download`：按 `nginx`、`httpd` 或 `iis` 打包已申请的证书。
 - `POST /api/v1/certificate/deploy`：把已申请的材料写入 Nginx 并重启。库里没有材料时，沿用磁盘上的证书文件只做重启。
 
 调度续期时，没绑定 Nginx 的证书只会重新申请。`POST /api/v1/etlJob/execute` 可以传 `deploy: false`；省略时，已绑定 Nginx 就部署，否则只申请。
@@ -65,6 +65,18 @@ HTTP-01 在签发前必须能通过 80 端口提供 `webroot/.well-known/acme-ch
 创建 ACME 数据源时会生成账户私钥。可以立刻向证书机构注册，也可以稍后调用 `POST /api/v1/datasource/register`。ZeroSSL、Google Trust Services 和 SSL.com 需要外部账号绑定（EAB）。支持的 DNS 包括阿里云、腾讯云 DNS、DNSPod Token、华为云、百度智能云、火山引擎、Amazon Route 53、Azure DNS、Google Cloud DNS、Cloudflare 和 DigitalOcean。`POST /api/v1/datasource/catalog` 返回机构和凭证字段。密钥不会出现在接口响应里，更新时留空表示保留原值。
 
 默认 ACME 目录是 Let's Encrypt 测试环境。生产目录是 `https://acme-v02.api.letsencrypt.org/directory`。DNS-01 会等待解析生效，耗时通常长于 HTTP-01。
+
+## 证书下载
+
+证书列表返回 `notAfter` 和 `daysRemaining`。已签发的证书可以下载三种压缩包：
+
+| format | 内容 |
+| --- | --- |
+| `nginx` | `fullchain.pem`、`privkey.pem`、`nginx.conf` |
+| `httpd` | `server.crt`、`server.key`、`chain.crt`、`httpd.conf`。没有中间证书时省略证书链 |
+| `iis` | `certificate.pfx`、`iis.txt`。请求体要带 8 到 64 位 `password`，PFX 使用 IIS 可导入的传统 PKCS#12 |
+
+`apache` 与 `httpd` 相同。尚未签发时下载会返回 400。
 
 ## 接口
 
