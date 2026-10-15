@@ -41,7 +41,7 @@ func MigrateAndSeed(db *gorm.DB, cfg *config.Config) (Ready, error) {
 		return Ready{}, err
 	}
 	if err := syncBuiltinGrants(db); err != nil {
-		return err
+		return Ready{}, err
 	}
 	var users int64
 	if err := db.Model(&auth.User{}).Count(&users).Error; err != nil {
