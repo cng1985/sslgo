@@ -24,8 +24,9 @@ func RegisterRouter(r httpapi.Router, c *Controller) {
 		Summary: "创建证书申请，并自动生成签发流水线",
 		Fields: []httpapi.Field{
 			{Name: "name", Type: "string", Required: true, Description: "证书名称"},
-			{Name: "domains", Type: "array<string>", Required: true, Description: "域名列表，HTTP-01 不支持通配符"},
+			{Name: "domains", Type: "array<string>", Required: true, Description: "域名列表。通配符只能在最左侧，并且必须使用 dns-01"},
 			{Name: "email", Type: "string", Required: false, Description: "可选联系邮箱，默认使用 ACME 数据源邮箱"},
+			{Name: "challengeType", Type: "string", Required: false, Description: "http-01 或 dns-01，默认 http-01。dns-01 使用 ACME 账户绑定的云厂商 DNS"},
 			{Name: "keyType", Type: "string", Required: false, Description: "ec256 或 rsa2048，默认 ec256"},
 			{Name: "acmeDataSourceId", Type: "number", Required: true, Description: "ACME 数据源 ID"},
 			{Name: "nginxDataSourceId", Type: "number", Required: true, Description: "Nginx 数据源 ID"},
@@ -40,8 +41,9 @@ func RegisterRouter(r httpapi.Router, c *Controller) {
 		Fields: []httpapi.Field{
 			{Name: "id", Type: "number", Required: true, Description: "证书 ID"},
 			{Name: "name", Type: "string", Required: true, Description: "证书名称"},
-			{Name: "domains", Type: "array<string>", Required: true, Description: "域名列表"},
+			{Name: "domains", Type: "array<string>", Required: true, Description: "域名列表。通配符必须使用 dns-01"},
 			{Name: "email", Type: "string", Required: false, Description: "联系邮箱"},
+			{Name: "challengeType", Type: "string", Required: false, Description: "http-01 或 dns-01"},
 			{Name: "keyType", Type: "string", Required: false, Description: "ec256 或 rsa2048"},
 			{Name: "acmeDataSourceId", Type: "number", Required: true, Description: "ACME 数据源 ID"},
 			{Name: "nginxDataSourceId", Type: "number", Required: true, Description: "Nginx 数据源 ID"},

@@ -35,12 +35,18 @@ type DataSource struct {
 
 func (DataSource) TableName() string { return "datasources" }
 
-// ACMEConfig 是 Let's Encrypt 账户配置。账户私钥只写入数据库，接口响应中会去掉。
+// ACMEConfig 是 ACME 账户配置。账户私钥和云厂商密钥只写入数据库，接口响应中会去掉。
 type ACMEConfig struct {
-	Email           string `json:"email"`
-	DirectoryURL    string `json:"directoryURL"`
-	AccountKeyPEM   string `json:"accountKeyPEM,omitempty"`
-	RegistrationURI string `json:"registrationURI,omitempty"`
+	Email           string            `json:"email"`
+	CA              string            `json:"ca,omitempty"`
+	DirectoryURL    string            `json:"directoryURL"`
+	AccountKeyPEM   string            `json:"accountKeyPEM,omitempty"`
+	RegistrationURI string            `json:"registrationURI,omitempty"`
+	EABKID          string            `json:"eabKid,omitempty"`
+	EABHMACKey      string            `json:"eabHmacKey,omitempty"`
+	TermsAgreed     bool              `json:"termsAgreed,omitempty"`
+	DNSProvider     string            `json:"dnsProvider,omitempty"`
+	DNS             map[string]string `json:"dns,omitempty"`
 }
 
 // NginxConfig 描述证书落地目录，以及签发后如何重启 Nginx。
@@ -73,6 +79,12 @@ type UpdateRequest struct {
 
 type IDRequest struct {
 	ID uint `json:"id"`
+}
+
+// RegisterAccountRequest 把已保存的 ACME 配置注册到证书机构。
+type RegisterAccountRequest struct {
+	ID       uint `json:"id"`
+	AgreeTOS bool `json:"agreeTos"`
 }
 
 type ListRequest struct {

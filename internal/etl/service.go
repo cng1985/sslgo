@@ -38,7 +38,7 @@ func NewETLService(repo *Repository, tasks *task.Repository, sources *datasource
 }
 
 func (s *ETLService) CreateCertificate(ctx context.Context, tenantID uint, req CertificateCreateRequest) (*CertificateView, error) {
-	item, err := s.prepareCertificate(ctx, tenantID, req.Name, req.Domains, req.Email, req.KeyType, req.ACMEDataSourceID, req.NginxDataSourceID, req.RenewBeforeDays, req.AutoRenew, req.AgreeTOS)
+	item, err := s.prepareCertificate(ctx, tenantID, req.Name, req.Domains, req.Email, req.ChallengeType, req.KeyType, req.ACMEDataSourceID, req.NginxDataSourceID, req.RenewBeforeDays, req.AutoRenew, req.AgreeTOS)
 	if err != nil {
 		return nil, err
 	}
@@ -64,13 +64,14 @@ func (s *ETLService) UpdateCertificate(ctx context.Context, tenantID uint, req C
 	if current.Status == StatusIssuing {
 		return nil, apperror.New(409, "证书正在签发，不能修改")
 	}
-	item, err := s.prepareCertificate(ctx, tenantID, req.Name, req.Domains, req.Email, req.KeyType, req.ACMEDataSourceID, req.NginxDataSourceID, req.RenewBeforeDays, req.AutoRenew, req.AgreeTOS)
+	item, err := s.prepareCertificate(ctx, tenantID, req.Name, req.Domains, req.Email, req.ChallengeType, req.KeyType, req.ACMEDataSourceID, req.NginxDataSourceID, req.RenewBeforeDays, req.AutoRenew, req.AgreeTOS)
 	if err != nil {
 		return nil, err
 	}
 	current.Name = item.Name
 	current.DomainsJSON = item.DomainsJSON
 	current.Email = item.Email
+	current.ChallengeType = item.ChallengeType
 	current.KeyType = item.KeyType
 	current.ACMEDataSourceID = item.ACMEDataSourceID
 	current.NginxDataSourceID = item.NginxDataSourceID
@@ -362,13 +363,13 @@ func (s *ETLService) finish(taskID uint) {
 			s.markFailed(taskID, fmt.Sprintf("内部错误: %v", rec))
 		}
 	}()
-	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.ACME.Timeout+30*time.Second)
-	defer cancel()
-	item, err := s.tasks.GetByID(ctx, taskID)
+	item, err := s.tasks.GetByID(context.Background(), taskID)
 	if err != nil {
 		slog.Error("读取任务失败", "err", err)
 		return
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), s.issueTimeout(item))
+	defer cancel()
 	unlock := s.locks.lock(item.CertificateID)
 	defer unlock()
 	if err := s.tasks.MarkRunning(ctx, item.ID, "extract"); err != nil {
@@ -468,7 +469,20 @@ func (s *ETLService) markFailed(taskID uint, message string) {
 	}
 }
 
-func (s *ETLService) prepareCertificate(ctx context.Context, tenantID uint, name string, domains []string, email, keyType string, acmeID, nginxID uint, renewDays int, autoRenew, agree bool) (*Certificate, error) {
+func (s *ETLService) issueTimeout(item *task.Task) time.Duration {
+	timeout := s.cfg.ACME.Timeout
+	if timeout <= 0 {
+		timeout = 2 * time.Minute
+	}
+	if cert, err := s.repo.GetCertificate(context.Background(), item.TenantID, item.CertificateID); err == nil && cert.ChallengeType == ChallengeDNS01 {
+		if timeout < 4*time.Minute {
+			timeout = 4 * time.Minute
+		}
+	}
+	return timeout + 30*time.Second
+}
+
+func (s *ETLService) prepareCertificate(ctx context.Context, tenantID uint, name string, domains []string, email, challenge, keyType string, acmeID, nginxID uint, renewDays int, autoRenew, agree bool) (*Certificate, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, apperror.New(400, "请填写证书名称")
@@ -477,6 +491,10 @@ func (s *ETLService) prepareCertificate(ctx context.Context, tenantID uint, name
 		return nil, apperror.New(400, "必须同意 ACME 服务条款")
 	}
 	normalized, err := normalizeDomains(domains)
+	if err != nil {
+		return nil, err
+	}
+	challenge, err = normalizeChallenge(challenge, normalized)
 	if err != nil {
 		return nil, err
 	}
@@ -502,13 +520,20 @@ func (s *ETLService) prepareCertificate(ctx context.Context, tenantID uint, name
 	if acme.Type != datasource.TypeACME || nginx.Type != datasource.TypeNginx {
 		return nil, apperror.New(400, "请分别选择 ACME 数据源和 Nginx 数据源")
 	}
+	acmeCfg, err := datasource.ParseACME(acme.ConfigJSON)
+	if err != nil {
+		return nil, err
+	}
+	if challenge == ChallengeDNS01 && strings.TrimSpace(acmeCfg.DNSProvider) == "" {
+		return nil, apperror.New(400, "DNS-01 需要先在 ACME 账户绑定云厂商 DNS")
+	}
 	rawDomains, err := encodeDomains(normalized)
 	if err != nil {
 		return nil, err
 	}
 	return &Certificate{
 		TenantID: tenantID, Name: name, DomainsJSON: rawDomains, Email: email,
-		ChallengeType: ChallengeHTTP01, KeyType: keyType, ACMEDataSourceID: acme.ID,
+		ChallengeType: challenge, KeyType: keyType, ACMEDataSourceID: acme.ID,
 		NginxDataSourceID: nginx.ID, RenewBeforeDays: renewDays, AutoRenew: autoRenew, AgreeTOS: true,
 	}, nil
 }

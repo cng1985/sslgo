@@ -24,6 +24,8 @@ func PermissionCatalog() []Permission {
 		{"datasource", "update", "更新数据源"},
 		{"datasource", "delete", "删除数据源"},
 		{"datasource", "test", "测试数据源"},
+		{"datasource", "register", "注册 ACME 账户"},
+		{"datasource", "catalog", "查看 ACME 机构与云厂商"},
 		{"certificate", "list", "查看证书"},
 		{"certificate", "detail", "查看证书详情"},
 		{"certificate", "create", "创建证书"},
@@ -69,7 +71,7 @@ func BuiltinGrants(code string) map[string]struct{} {
 		return all
 	case RoleOperator:
 		return pick(all,
-			"datasource:list", "datasource:detail", "datasource:create", "datasource:update", "datasource:delete", "datasource:test",
+			"datasource:list", "datasource:detail", "datasource:create", "datasource:update", "datasource:delete", "datasource:test", "datasource:register", "datasource:catalog",
 			"certificate:list", "certificate:detail", "certificate:create", "certificate:update", "certificate:delete", "certificate:issue", "certificate:deploy",
 			"etlJob:list", "etlJob:detail", "etlJob:create", "etlJob:update", "etlJob:delete", "etlJob:execute",
 			"task:list", "task:detail",
@@ -80,7 +82,7 @@ func BuiltinGrants(code string) map[string]struct{} {
 	case RoleViewer:
 		return pick(all,
 			"user:list", "role:list", "role:detail",
-			"datasource:list", "datasource:detail",
+			"datasource:list", "datasource:detail", "datasource:catalog",
 			"certificate:list", "certificate:detail",
 			"etlJob:list", "etlJob:detail",
 			"task:list", "task:detail",
