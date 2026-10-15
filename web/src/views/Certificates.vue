@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h1>证书</h1>
-        <p>可以只向 ACME 申请，也可以申请后立刻部署到 Nginx。DNS-01 不选 Nginx 也能单独申请，私钥稍后下载。</p>
+        <p>可以只向 ACME 申请，也可以申请后立刻部署到 Nginx。DNS-01 不选 Nginx 也能单独申请。下载按域名保存为「域名.pem」和「域名.key」，通配符会去掉前面的 *。</p>
       </div>
       <el-button v-if="auth.can('certificate:create')" type="primary" @click="openCreate">新建证书</el-button>
     </div>
@@ -86,7 +86,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '../api/http'
 import { useAuthStore } from '../stores/auth'
-import { fmt, statusText, statusType } from '../utils'
+import { certificateFileBase, certificateFiles, fmt, statusText, statusType } from '../utils'
 
 const auth = useAuthStore()
 const rows = ref([])
@@ -198,18 +198,25 @@ async function deploy(row) {
   load()
 }
 
-async function download(row) {
-  const body = await http.post('/certificate/download', { id: row.id })
-  const material = body.data
-  const text = [material.certPem, material.keyPem, material.issuerPem].filter(Boolean).join('\n')
+function saveTextFile(filename, text) {
   const blob = new Blob([text], { type: 'application/x-pem-file' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `${String(row.name || 'certificate').replace(/[^\w.\-\u4e00-\u9fa5]+/g, '_')}.pem`
+  link.download = filename
+  document.body.appendChild(link)
   link.click()
-  URL.revokeObjectURL(url)
-  ElMessage.success('证书已下载')
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1500)
+}
+
+async function download(row) {
+  const body = await http.post('/certificate/download', { id: row.id })
+  const base = certificateFileBase(row.domains)
+  const files = certificateFiles(body.data)
+  saveTextFile(`${base}.pem`, files.pem)
+  saveTextFile(`${base}.key`, files.key)
+  ElMessage.success(`已下载 ${base}.pem 和 ${base}.key`)
 }
 
 async function remove(row) {
