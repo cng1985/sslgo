@@ -55,7 +55,7 @@ SQLite 文件默认是 `data/sslplatform.db`，权限 `0600`。启动时自动�
 
 - `POST /api/v1/certificate/apply`：只向 ACME 申请。
 - `POST /api/v1/certificate/issue`：申请并部署，证书必须已绑定 Nginx。
-- `POST /api/v1/certificate/download`：取回证书、私钥和颁发者证书。
+- `POST /api/v1/certificate/download`：按 `nginx`、`httpd` 或 `iis` 打包已申请的证书。
 - `POST /api/v1/certificate/deploy`：把已申请的材料写入 Nginx 并重启。库里没有材料时，沿用磁盘上的证书文件只做重启。
 
 调度续期时，没绑定 Nginx 的证书只会重新申请。`POST /api/v1/etlJob/execute` 可以传 `deploy: false`；省略时，已绑定 Nginx 就部署，否则只申请。

@@ -98,11 +98,6 @@ func RegisterRouter(r httpapi.Router, c *Controller) {
 		},
 	}, c.Apply)
 	r.Protected(httpapi.Meta{
-		Resource: "certificate", Action: "download", Path: "/certificate/download",
-		Summary: "下载已申请的证书、私钥和颁发者证书。列表和详情不返回私钥",
-		Fields:  []httpapi.Field{{Name: "id", Type: "number", Required: true, Description: "证书 ID"}},
-	}, c.Download)
-	r.Protected(httpapi.Meta{
 		Resource: "certificate", Action: "deploy", Path: "/certificate/deploy",
 		Summary: "不重新申请。已保存的证书会写入 Nginx 后重启；只有磁盘文件时只重启",
 		Fields:  []httpapi.Field{{Name: "id", Type: "number", Required: true, Description: "证书 ID"}},
@@ -271,21 +266,6 @@ func (c *Controller) Apply(ctx *gin.Context) {
 	}
 	tc, _ := tenant.From(ctx.Request.Context())
 	view, err := c.svc.Apply(ctx.Request.Context(), tc.TenantID, tc.UserID, req)
-	if err != nil {
-		response.FromError(ctx, err)
-		return
-	}
-	response.OK(ctx, view)
-}
-
-func (c *Controller) Download(ctx *gin.Context) {
-	var req CertificateIDRequest
-	if err := bind.JSON(ctx, &req); err != nil {
-		response.FromError(ctx, err)
-		return
-	}
-	tc, _ := tenant.From(ctx.Request.Context())
-	view, err := c.svc.Download(ctx.Request.Context(), tc.TenantID, req.ID)
 	if err != nil {
 		response.FromError(ctx, err)
 		return

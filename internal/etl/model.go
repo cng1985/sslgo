@@ -111,17 +111,6 @@ type CertificateIssueRequest struct {
 	Force bool `json:"force"`
 }
 
-// CertificateMaterial 是用户主动下载时才返回的证书和私钥。
-type CertificateMaterial struct {
-	ID          uint     `json:"id"`
-	Name        string   `json:"name"`
-	Domains     []string `json:"domains"`
-	CertPEM     string   `json:"certPem"`
-	KeyPEM      string   `json:"keyPem"`
-	IssuerPEM   string   `json:"issuerPem"`
-	Fingerprint string   `json:"fingerprint"`
-}
-
 type CertificateDeployRequest struct {
 	ID uint `json:"id"`
 }

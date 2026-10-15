@@ -29,12 +29,21 @@
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" width="340">
+        <el-table-column label="操作" width="460">
           <template #default="{ row }">
             <el-button v-if="auth.can('certificate:apply')" link type="primary" @click="apply(row)">申请</el-button>
             <el-button v-if="auth.can('certificate:issue') && row.nginxDataSourceId" link type="primary" @click="issue(row)">签发并部署</el-button>
             <el-button v-if="canDeploy(row)" link @click="deploy(row)">{{ row.status === 'deployed' ? '重启 Nginx' : '部署' }}</el-button>
-            <el-button v-if="canDownload(row)" link @click="download(row)">下载</el-button>
+            <el-dropdown v-if="canDownload(row)" trigger="click" @command="(format) => download(row, format)">
+              <el-button link type="primary">下载</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="nginx">Nginx（fullchain + key）</el-dropdown-item>
+                  <el-dropdown-item command="httpd">httpd（crt + key + chain）</el-dropdown-item>
+                  <el-dropdown-item command="iis">IIS（PFX）</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <el-button v-if="auth.can('certificate:delete')" link type="danger" @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -246,20 +255,6 @@ async function deploy(row) {
   const body = await http.post('/certificate/deploy', { id: row.id })
   ElMessage.success(body.data.result?.message || '已执行')
   load()
-}
-
-async function download(row) {
-  const body = await http.post('/certificate/download', { id: row.id })
-  const material = body.data
-  const text = [material.certPem, material.keyPem, material.issuerPem].filter(Boolean).join('\n')
-  const blob = new Blob([text], { type: 'application/x-pem-file' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `${String(row.name || 'certificate').replace(/[^\w.\-\u4e00-\u9fa5]+/g, '_')}.pem`
-  link.click()
-  URL.revokeObjectURL(url)
-  ElMessage.success('证书已下载')
 }
 
 async function remove(row) {

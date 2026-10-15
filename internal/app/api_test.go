@@ -281,11 +281,13 @@ func TestPlatformFlow(t *testing.T) {
 	if strings.Contains(mustJSON(onlyList), "PRIVATE KEY") {
 		t.Fatal("列表不应返回私钥")
 	}
-	material := decodeData(t, mustPost(t, base, "/api/v1/certificate/download", token, map[string]any{"id": only["id"]}, 200))
-	if !strings.Contains(material["keyPem"].(string), "PRIVATE KEY") || !strings.Contains(material["certPem"].(string), "CERTIFICATE") {
+	onlyFiles := unzipDownload(t, decodeData(t, mustPost(t, base, "/api/v1/certificate/download", token, map[string]any{
+		"id": only["id"], "format": "nginx",
+	}, 200)))
+	if !bytes.Contains(onlyFiles["fullchain.pem"], []byte("CERTIFICATE")) || !bytes.Contains(onlyFiles["privkey.pem"], []byte("PRIVATE KEY")) {
 		t.Fatal("下载结果缺少证书或私钥")
 	}
-	if leaf := readCertPEM(t, material["certPem"].(string)); len(leaf.DNSNames) != 1 || leaf.DNSNames[0] != "only.example.com" {
+	if leaf := readCertPEM(t, string(onlyFiles["fullchain.pem"])); len(leaf.DNSNames) != 1 || leaf.DNSNames[0] != "only.example.com" {
 		t.Fatalf("下载的证书域名=%v", leaf.DNSNames)
 	}
 	bound := decodeData(t, mustPost(t, base, "/api/v1/certificate/update", token, map[string]any{

@@ -221,20 +221,6 @@ func (s *ETLService) Apply(ctx context.Context, tenantID, userID uint, req Certi
 	return s.Execute(ctx, tenantID, userID, JobExecuteRequest{ID: job.ID, Force: req.Force, Deploy: &deploy}, task.TriggerManual, false)
 }
 
-func (s *ETLService) Download(ctx context.Context, tenantID, id uint) (*CertificateMaterial, error) {
-	item, err := s.repo.GetCertificate(ctx, tenantID, id)
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(item.CertPEM) == "" || strings.TrimSpace(item.KeyPEM) == "" {
-		return nil, apperror.New(400, "还没有可下载的证书，请先申请")
-	}
-	return &CertificateMaterial{
-		ID: item.ID, Name: item.Name, Domains: decodeDomains(item.DomainsJSON),
-		CertPEM: item.CertPEM, KeyPEM: item.KeyPEM, IssuerPEM: item.IssuerPEM, Fingerprint: item.Fingerprint,
-	}, nil
-}
-
 func (s *ETLService) DeployExisting(ctx context.Context, tenantID, userID, id uint) (*task.View, error) {
 	cert, err := s.repo.GetCertificate(ctx, tenantID, id)
 	if err != nil {
