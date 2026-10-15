@@ -34,7 +34,7 @@
         </el-table-column>
       </el-table>
     </div>
-    <el-dialog v-model="open" title="新建数据源" width="680px">
+    <el-dialog v-model="open" title="新建数据源" width="680px" class="source-dialog" align-center>
       <el-form label-position="top">
         <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
         <el-form-item label="类型">
@@ -100,8 +100,10 @@
           </el-form-item>
           <el-form-item v-if="form.serviceManager === 'systemd'" label="服务名"><el-input v-model="form.serviceName" /></el-form-item>
           <el-form-item label="HTTP-01 网站根目录"><el-input v-model="form.webroot" /></el-form-item>
-          <el-form-item label="证书目录"><el-input v-model="form.certDir" /></el-form-item>
-          <el-form-item label="可选的 Nginx 片段目录"><el-input v-model="form.snippetDir" placeholder="/etc/nginx/conf.d" /></el-form-item>
+          <el-form-item label="证书目录">
+            <el-input v-model="form.certDir" placeholder="/usr/local/nginx/conf/certs" />
+            <p class="hint">部署只按域名覆盖此目录中的证书和私钥，例如 nbsaas.com.pem 与 nbsaas.com.key，然后重启 Nginx。不会修改 Nginx 配置文件。</p>
+          </el-form-item>
           <el-checkbox v-model="form.testBefore">重启前执行 nginx -t</el-checkbox>
           <el-checkbox v-model="form.dryRun">演练模式，只写文件不重启</el-checkbox>
         </template>
@@ -136,7 +138,7 @@ function blank() {
     eabKid: '', eabHmacKey: '', termsAgreed: false, registerNow: false,
     dnsProvider: '', dns: {},
     nginxBin: '/usr/sbin/nginx', serviceManager: 'systemd', serviceName: 'nginx', action: 'restart',
-    webroot: '/var/www/acme', certDir: '/etc/nginx/ssl', snippetDir: '/etc/nginx/conf.d',
+    webroot: '/var/www/acme', certDir: '/usr/local/nginx/conf/certs',
     testBefore: true, dryRun: false
   }
 }
@@ -195,7 +197,7 @@ async function create() {
       }
     : {
         nginxBin: form.nginxBin, serviceManager: form.serviceManager, serviceName: form.serviceName,
-        action: form.action, webroot: form.webroot, certDir: form.certDir, snippetDir: form.snippetDir,
+        action: form.action, webroot: form.webroot, certDir: form.certDir,
         testBefore: form.testBefore, dryRun: form.dryRun
       }
   const registering = form.type === 'acme' && form.registerNow
@@ -231,3 +233,14 @@ onMounted(() => {
   loadCatalog()
 })
 </script>
+
+<style>
+.source-dialog.el-dialog {
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+}
+.source-dialog .el-dialog__body {
+  overflow: auto;
+}
+</style>

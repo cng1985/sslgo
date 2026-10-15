@@ -195,13 +195,12 @@ func bootstrapNginx(db *gorm.DB, cfg *config.Config) error {
 		ServiceName:    "nginx",
 		Action:         "restart",
 		Webroot:        "/var/www/acme",
-		CertDir:        "/etc/nginx/ssl",
-		SnippetDir:     "/etc/nginx/conf.d",
+		CertDir:        "/usr/local/nginx/conf/certs",
 		TestBefore:     true,
 	})
 	rows := []datasource.DataSource{
 		{TenantID: tenant.ID, Name: "Let's Encrypt", Type: datasource.TypeACME, Description: "容器内默认 ACME 账户", ConfigJSON: string(acmeRaw), Status: datasource.StatusActive},
-		{TenantID: tenant.ID, Name: "本机 Nginx", Type: datasource.TypeNginx, Description: "容器内 Nginx，签发后重启服务", ConfigJSON: string(nginxRaw), Status: datasource.StatusActive},
+		{TenantID: tenant.ID, Name: "本机 Nginx", Type: datasource.TypeNginx, Description: "按域名覆盖证书文件后重启 Nginx，不修改配置", ConfigJSON: string(nginxRaw), Status: datasource.StatusActive},
 	}
 	return db.Create(&rows).Error
 }

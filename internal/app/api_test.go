@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -186,6 +185,16 @@ func TestPlatformFlow(t *testing.T) {
 	if !strings.Contains(logText, "-t") || !strings.Contains(logText, "-s quit") {
 		t.Fatalf("nginx 日志=%s", logText)
 	}
+	if _, err := os.Stat(filepath.Join(certDir, "example.com.pem")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(certDir, "example.com.key")); err != nil {
+		t.Fatal(err)
+	}
+	confEntries, err := os.ReadDir(snippetDir)
+	if err != nil || len(confEntries) != 0 {
+		t.Fatalf("部署不应写入 Nginx 配置: %v %v", confEntries, err)
+	}
 
 	rerun := decodeData(t, mustPost(t, base, "/api/v1/etlJob/execute", token, map[string]any{
 		"id": cert["jobId"], "force": false,
@@ -264,7 +273,7 @@ func TestPlatformFlow(t *testing.T) {
 	if appliedResult["issued"] != true || appliedResult["deployed"] != false || !strings.Contains(appliedResult["message"].(string), "尚未部署") {
 		t.Fatalf("单独申请结果=%v", appliedResult)
 	}
-	onlyFile := filepath.Join(certDir, fmt.Sprintf("cert-%.0f.crt", only["id"].(float64)))
+	onlyFile := filepath.Join(certDir, "only.example.com.pem")
 	if _, err := os.Stat(onlyFile); !os.IsNotExist(err) {
 		t.Fatalf("单独申请不应写入证书文件: %v", err)
 	}

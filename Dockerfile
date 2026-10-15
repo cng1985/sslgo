@@ -22,7 +22,7 @@ COPY deploy/entrypoint.sh /entrypoint.sh
 COPY --from=build /out/sslplatform /usr/local/bin/sslplatform
 RUN chmod +x /entrypoint.sh
 EXPOSE 8080 80
-VOLUME ["/data", "/etc/nginx/ssl", "/var/www/acme"]
+VOLUME ["/data", "/usr/local/nginx/conf/certs", "/var/www/acme"]
 ENV SSL_DATABASE_PATH=/data/sslplatform.db \
     SSL_BOOTSTRAP_NGINX=true \
     SSL_SERVER_ADDR=:8080

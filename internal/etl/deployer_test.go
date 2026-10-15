@@ -17,7 +17,7 @@ func TestDeployRestoresCertificateWhenNginxTestFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := writeNginx(t, dir, true)
-	crt := filepath.Join(certDir, "cert-7.crt")
+	crt := filepath.Join(certDir, "example.com.pem")
 	if err := os.WriteFile(crt, []byte("OLD"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -51,6 +51,13 @@ func TestDeployWritesCertificateAndRestartsNginx(t *testing.T) {
 	if err := os.MkdirAll(certDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(snippetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	kept := filepath.Join(snippetDir, "nbsaas.com.conf")
+	if err := os.WriteFile(kept, []byte("server { ssl_certificate nbsaas.com.pem; }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	bin := writeNginx(t, dir, false)
 	result, err := NewDeployer().Deploy(context.Background(), DeployRequest{
 		Nginx: datasource.NginxConfig{
@@ -69,9 +76,15 @@ func TestDeployWritesCertificateAndRestartsNginx(t *testing.T) {
 	if result.Action != datasource.ActionRestart {
 		t.Fatalf("action=%s", result.Action)
 	}
+	if result.SnippetPath != "" || result.ChainPath != "" {
+		t.Fatalf("不应返回配置或证书链路径: %+v", result)
+	}
 	got, err := os.ReadFile(result.CertPath)
-	if err != nil || string(got) != "CERTDATA" {
+	if err != nil || string(got) != "CERTDATA\nCHAINDATA\n" {
 		t.Fatalf("cert=%q err=%v", got, err)
+	}
+	if result.CertPath != filepath.Join(certDir, "www.example.com.pem") || result.KeyPath != filepath.Join(certDir, "www.example.com.key") {
+		t.Fatalf("paths=%s %s", result.CertPath, result.KeyPath)
 	}
 	info, err := os.Stat(result.KeyPath)
 	if err != nil {
@@ -80,9 +93,13 @@ func TestDeployWritesCertificateAndRestartsNginx(t *testing.T) {
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("私钥权限 = %o", info.Mode().Perm())
 	}
-	snippet, err := os.ReadFile(result.SnippetPath)
-	if err != nil || !strings.Contains(string(snippet), "www.example.com") {
-		t.Fatalf("snippet=%q err=%v", snippet, err)
+	conf, err := os.ReadFile(kept)
+	if err != nil || string(conf) != "server { ssl_certificate nbsaas.com.pem; }\n" {
+		t.Fatalf("nginx 配置被修改: %q err=%v", conf, err)
+	}
+	entries, err := os.ReadDir(snippetDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("配置目录应保持原样: %v %v", entries, err)
 	}
 	log, err := os.ReadFile(filepath.Join(dir, "nginx.log"))
 	if err != nil {
@@ -91,6 +108,64 @@ func TestDeployWritesCertificateAndRestartsNginx(t *testing.T) {
 	text := string(log)
 	if !strings.Contains(text, "-t") || !strings.Contains(text, "-s quit") {
 		t.Fatalf("应先检测再重启，日志 %s", text)
+	}
+}
+
+func TestDeployOverwritesDomainCertificate(t *testing.T) {
+	dir := t.TempDir()
+	certDir := filepath.Join(dir, "certs")
+	if err := os.MkdirAll(certDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	pemPath := filepath.Join(certDir, "nbsaas.com.pem")
+	keyPath := filepath.Join(certDir, "nbsaas.com.key")
+	if err := os.WriteFile(pemPath, []byte("OLD CERT\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, []byte("OLD KEY\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bin := writeNginx(t, dir, false)
+	result, err := NewDeployer().Deploy(context.Background(), DeployRequest{
+		Nginx: datasource.NginxConfig{
+			NginxBin: bin, ServiceManager: datasource.ManagerSignal, Action: datasource.ActionRestart,
+			Webroot: dir, CertDir: certDir, TestBefore: true,
+		},
+		Domains:   []string{"*.nbsaas.com", "nbsaas.com"},
+		CertPEM:   "NEW CERT",
+		KeyPEM:    "NEW KEY",
+		IssuerPEM: "NEW CHAIN",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CertPath != pemPath || result.KeyPath != keyPath {
+		t.Fatalf("paths=%s %s", result.CertPath, result.KeyPath)
+	}
+	pem, err := os.ReadFile(pemPath)
+	if err != nil || string(pem) != "NEW CERT\nNEW CHAIN\n" {
+		t.Fatalf("pem=%q err=%v", pem, err)
+	}
+	key, err := os.ReadFile(keyPath)
+	if err != nil || string(key) != "NEW KEY\n" {
+		t.Fatalf("key=%q err=%v", key, err)
+	}
+	entries, err := os.ReadDir(certDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, entry := range entries {
+		names[entry.Name()] = true
+	}
+	if !names["nbsaas.com.pem"] || !names["nbsaas.com.key"] {
+		t.Fatalf("应覆盖域名证书: %v", names)
+	}
+	for name := range names {
+		if name == "nbsaas.com.pem" || name == "nbsaas.com.key" || strings.Contains(name, ".bak.") {
+			continue
+		}
+		t.Fatalf("证书目录出现了额外文件 %s", name)
 	}
 }
 

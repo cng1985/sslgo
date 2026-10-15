@@ -50,6 +50,8 @@ type ACMEConfig struct {
 }
 
 // NginxConfig 描述证书落地目录，以及签发后如何重启 Nginx。
+// 部署只覆盖 CertDir 里已有的「域名.pem」和「域名.key」，例如 /usr/local/nginx/conf/certs/nbsaas.com.pem。
+// SnippetDir 只为兼容旧配置保留，部署时不会读取，也不会修改 Nginx 配置文件。
 type NginxConfig struct {
 	NginxBin       string `json:"nginxBin"`
 	ServiceManager string `json:"serviceManager"`
@@ -57,7 +59,7 @@ type NginxConfig struct {
 	Action         string `json:"action"`
 	Webroot        string `json:"webroot"`
 	CertDir        string `json:"certDir"`
-	SnippetDir     string `json:"snippetDir"`
+	SnippetDir     string `json:"snippetDir,omitempty"`
 	TestBefore     bool   `json:"testBefore"`
 	DryRun         bool   `json:"dryRun"`
 }

@@ -13,7 +13,7 @@ services:
       SSL_ACME_DIRECTORY: https://acme-staging-v02.api.letsencrypt.org/directory
     volumes:
       - ssl-data:/data
-      - ssl-certs:/etc/nginx/ssl
+      - ssl-certs:/usr/local/nginx/conf/certs
       - ssl-webroot:/var/www/acme
 
 volumes:
