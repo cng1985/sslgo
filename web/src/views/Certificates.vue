@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h1>证书</h1>
-        <p>可以只向 ACME 申请，也可以申请后立刻部署到 Nginx。DNS-01 不选 Nginx 也能单独申请，私钥稍后下载。</p>
+        <p>可以只向 ACME 申请，也可以申请后立刻部署到 Nginx。下载的 zip 里是域名.pem 和域名.key，通配符 *.nbssas.com 会去掉 *.</p>
       </div>
       <el-button v-if="auth.can('certificate:create')" type="primary" @click="openCreate">新建证书</el-button>
     </div>
@@ -86,7 +86,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '../api/http'
 import { useAuthStore } from '../stores/auth'
-import { fmt, statusText, statusType } from '../utils'
+import { buildCertificateZip, fmt, statusText, statusType } from '../utils'
 
 const auth = useAuthStore()
 const rows = ref([])
@@ -200,13 +200,18 @@ async function deploy(row) {
 
 async function download(row) {
   const body = await http.post('/certificate/download', { id: row.id })
-  const material = body.data
-  const text = [material.certPem, material.keyPem, material.issuerPem].filter(Boolean).join('\n')
-  const blob = new Blob([text], { type: 'application/x-pem-file' })
+  const material = body.data || {}
+  const bundle = buildCertificateZip({
+    domains: material.domains?.length ? material.domains : row.domains,
+    certPem: material.certPem,
+    keyPem: material.keyPem,
+    issuerPem: material.issuerPem
+  })
+  const blob = new Blob([bundle.bytes], { type: 'application/zip' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `${String(row.name || 'certificate').replace(/[^\w.\-\u4e00-\u9fa5]+/g, '_')}.pem`
+  link.download = bundle.filename
   link.click()
   URL.revokeObjectURL(url)
   ElMessage.success('证书已下载')
