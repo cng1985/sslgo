@@ -35,6 +35,7 @@ func PermissionCatalog() []Permission {
 		{"certificate", "apply", "单独申请证书"},
 		{"certificate", "download", "下载证书和私钥"},
 		{"certificate", "deploy", "部署证书并重启 Nginx"},
+		{"certificate", "download", "下载 Nginx、httpd 或 IIS 证书"},
 		{"etlJob", "list", "查看签发流水线"},
 		{"etlJob", "detail", "查看流水线详情"},
 		{"etlJob", "create", "创建流水线"},

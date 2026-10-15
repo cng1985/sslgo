@@ -1,9 +1,11 @@
 package app_test
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -19,6 +21,7 @@ import (
 	"go.uber.org/fx/fxevent"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"software.sslmate.com/src/go-pkcs12"
 
 	"sslplatform/internal/app"
 	"sslplatform/internal/auth"
@@ -127,6 +130,58 @@ func TestPlatformFlow(t *testing.T) {
 	if len(leaf.DNSNames) != 2 {
 		t.Fatalf("dns=%v", leaf.DNSNames)
 	}
+	listed := mustPost(t, base, "/api/v1/certificate/list", token, map[string]any{"page": 1, "size": 20}, 200)
+	if strings.Contains(mustJSON(listed), "PRIVATE KEY") || strings.Contains(mustJSON(listed), "keyPem") || strings.Contains(mustJSON(listed), "issuerPem") {
+		t.Fatal("证书列表不应返回私钥")
+	}
+	foundExpiry := false
+	for _, item := range listed["data"].([]any) {
+		row := item.(map[string]any)
+		if row["id"] == cert["id"] {
+			foundExpiry = row["notAfter"] != nil && row["daysRemaining"] != nil
+		}
+	}
+	if !foundExpiry {
+		t.Fatalf("列表缺少到期时间: %s", mustJSON(listed))
+	}
+	detail := decodeData(t, mustPost(t, base, "/api/v1/certificate/detail", token, map[string]any{"id": cert["id"]}, 200))
+	if strings.Contains(mustJSON(detail), "PRIVATE KEY") || strings.Contains(mustJSON(detail), "keyPem") {
+		t.Fatal("证书详情不应返回私钥")
+	}
+	if !strings.Contains(detail["certPem"].(string), "BEGIN CERTIFICATE") {
+		t.Fatal("详情应返回公钥 PEM")
+	}
+	nginxFiles := unzipDownload(t, decodeData(t, mustPost(t, base, "/api/v1/certificate/download", token, map[string]any{
+		"id": cert["id"], "format": "nginx",
+	}, 200)))
+	if !bytes.Contains(nginxFiles["fullchain.pem"], []byte("BEGIN CERTIFICATE")) || !bytes.Contains(nginxFiles["privkey.pem"], []byte("PRIVATE KEY")) {
+		t.Fatal("Nginx 下载包不完整")
+	}
+	httpdFiles := unzipDownload(t, decodeData(t, mustPost(t, base, "/api/v1/certificate/download", token, map[string]any{
+		"id": cert["id"], "format": "httpd",
+	}, 200)))
+	if !bytes.Contains(httpdFiles["server.crt"], []byte("BEGIN CERTIFICATE")) || !bytes.Contains(httpdFiles["server.key"], []byte("PRIVATE KEY")) {
+		t.Fatal("httpd 下载包不完整")
+	}
+	if _, ok := httpdFiles["chain.crt"]; ok {
+		t.Fatal("自签测试证书不应包含重复证书链")
+	}
+	mustPost(t, base, "/api/v1/certificate/download", token, map[string]any{
+		"id": cert["id"], "format": "iis", "password": "short",
+	}, 400)
+	iisFiles := unzipDownload(t, decodeData(t, mustPost(t, base, "/api/v1/certificate/download", token, map[string]any{
+		"id": cert["id"], "format": "iis", "password": "Iis@123456",
+	}, 200)))
+	if _, _, err := pkcs12.Decode(iisFiles["certificate.pfx"], "Iis@123456"); err != nil {
+		t.Fatal(err)
+	}
+	pending := decodeData(t, mustPost(t, base, "/api/v1/certificate/create", token, map[string]any{
+		"name": "未签发", "domains": []string{"pending.example.com"}, "agreeTos": true,
+		"acmeDataSourceId": acme["id"], "nginxDataSourceId": nginx["id"],
+	}, 200))
+	mustPost(t, base, "/api/v1/certificate/download", token, map[string]any{
+		"id": pending["id"], "format": "nginx",
+	}, 400)
 	logText := readFile(t, filepath.Join(dir, "nginx.log"))
 	if !strings.Contains(logText, "-t") || !strings.Contains(logText, "-s quit") {
 		t.Fatalf("nginx 日志=%s", logText)
@@ -258,6 +313,9 @@ func TestPlatformFlow(t *testing.T) {
 	if page["responseType"] != "page" || page["total"].(float64) < 1 {
 		t.Fatalf("query=%v", page)
 	}
+	if strings.Contains(mustJSON(page), "PRIVATE KEY") || strings.Contains(mustJSON(page), "keyPem") {
+		t.Fatal("通用查询不应返回私钥")
+	}
 	one := decodeData(t, mustPost(t, base, "/api/v1/query/one", token, map[string]any{
 		"model": "user", "filters": map[string]any{"username": "admin"},
 	}, 200))
@@ -314,6 +372,7 @@ func TestPlatformFlow(t *testing.T) {
 		t.Fatalf("租户隔离失败: %v", otherList)
 	}
 	mustPost(t, base, "/api/v1/certificate/detail", otherToken, map[string]any{"id": cert["id"]}, 404)
+	mustPost(t, base, "/api/v1/certificate/download", otherToken, map[string]any{"id": cert["id"], "format": "nginx"}, 404)
 
 	home, homeBody := raw(t, http.MethodGet, base, "/", "", nil)
 	if home != http.StatusOK || !strings.Contains(homeBody, `id="app"`) {
@@ -396,6 +455,32 @@ func waitTask(t *testing.T, base, token string, id any) map[string]any {
 	}
 	t.Fatal("任务超时")
 	return nil
+}
+
+func unzipDownload(t *testing.T, body map[string]any) map[string][]byte {
+	t.Helper()
+	raw, err := base64.StdEncoding.DecodeString(body["contentBase64"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string][]byte{}
+	for _, file := range zr.File {
+		rc, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		out[file.Name] = data
+	}
+	return out
 }
 
 func readCert(t *testing.T, path string) *x509.Certificate {

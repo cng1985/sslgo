@@ -126,6 +126,20 @@ type CertificateDeployRequest struct {
 	ID uint `json:"id"`
 }
 
+type CertificateDownloadRequest struct {
+	ID       uint   `json:"id"`
+	Format   string `json:"format"`
+	Password string `json:"password"`
+}
+
+type CertificateDownload struct {
+	Filename      string     `json:"filename"`
+	ContentType   string     `json:"contentType"`
+	ContentBase64 string     `json:"contentBase64"`
+	Format        string     `json:"format"`
+	NotAfter      *time.Time `json:"notAfter,omitempty"`
+}
+
 type JobCreateRequest struct {
 	Name          string `json:"name"`
 	CertificateID uint   `json:"certificateId"`
@@ -173,6 +187,7 @@ type CertificateView struct {
 	NotBefore         *time.Time `json:"notBefore,omitempty"`
 	NotAfter          *time.Time `json:"notAfter,omitempty"`
 	Fingerprint       string     `json:"fingerprint"`
+	DaysRemaining     *int       `json:"daysRemaining,omitempty"`
 	LastError         string     `json:"lastError"`
 	LastIssuedAt      *time.Time `json:"lastIssuedAt,omitempty"`
 	LastDeployedAt    *time.Time `json:"lastDeployedAt,omitempty"`

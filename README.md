@@ -66,6 +66,18 @@ HTTP-01 在签发前必须能通过 80 端口提供 `webroot/.well-known/acme-ch
 
 默认 ACME 目录是 Let's Encrypt 测试环境。生产目录是 `https://acme-v02.api.letsencrypt.org/directory`。DNS-01 会等待解析生效，耗时通常长于 HTTP-01。
 
+## 证书下载
+
+证书列表返回 `notAfter` 和 `daysRemaining`。已签发的证书可以下载三种压缩包：
+
+| format | 内容 |
+| --- | --- |
+| `nginx` | `fullchain.pem`、`privkey.pem`、`nginx.conf` |
+| `httpd` | `server.crt`、`server.key`、`chain.crt`、`httpd.conf`。没有中间证书时省略证书链 |
+| `iis` | `certificate.pfx`、`iis.txt`。请求体要带 8 到 64 位 `password`，PFX 使用 IIS 可导入的传统 PKCS#12 |
+
+`apache` 与 `httpd` 相同。尚未签发时下载会返回 400。
+
 ## 接口
 
 全部业务接口都是 `POST /api/v1/{resource}/{action}`，请求和响应为 JSON。
