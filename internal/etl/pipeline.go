@@ -25,6 +25,7 @@ type PipelineContext struct {
 	Name    string
 	Force   bool
 	Trigger string
+	Deploy  bool
 }
 
 // TaskState 是流水线执行过程中的任务状态。
@@ -123,6 +124,10 @@ func (s transformStage) Execute(ctx context.Context, data *ETLContext) error {
 	return s.svc.transform(ctx, data)
 }
 func (s loadStage) Execute(ctx context.Context, data *ETLContext) error {
+	if !data.Pipeline.Deploy {
+		data.Result.Message = "证书已申请，尚未部署到 Nginx"
+		return nil
+	}
 	return s.svc.load(ctx, data)
 }
 
@@ -144,25 +149,41 @@ func (s *ETLService) extract(ctx context.Context, data *ETLContext) error {
 	if err != nil {
 		return err
 	}
-	nginx, err := s.sources.Get(ctx, data.Tenant.TenantID, cert.NginxDataSourceID)
-	if err != nil {
-		return err
-	}
-	if acme.Type != datasource.TypeACME || nginx.Type != datasource.TypeNginx {
+	if acme.Type != datasource.TypeACME {
 		return apperror.New(400, "证书关联的数据源类型不正确")
 	}
-	if acme.Status != datasource.StatusActive || nginx.Status != datasource.StatusActive {
+	if acme.Status != datasource.StatusActive {
 		return apperror.New(400, "数据源已停用")
 	}
 	acmeCfg, err := datasource.ParseACME(acme.ConfigJSON)
 	if err != nil {
 		return err
 	}
-	nginxCfg, err := datasource.ParseNginx(nginx.ConfigJSON)
-	if err != nil {
-		return err
+	var nginx *datasource.DataSource
+	var nginxCfg datasource.NginxConfig
+	if cert.NginxDataSourceID != 0 {
+		nginx, err = s.sources.Get(ctx, data.Tenant.TenantID, cert.NginxDataSourceID)
+		if err != nil {
+			return err
+		}
+		if nginx.Type != datasource.TypeNginx {
+			return apperror.New(400, "证书关联的数据源类型不正确")
+		}
+		if nginx.Status != datasource.StatusActive {
+			return apperror.New(400, "数据源已停用")
+		}
+		nginxCfg, err = datasource.ParseNginx(nginx.ConfigJSON)
+		if err != nil {
+			return err
+		}
+	}
+	if data.Pipeline.Deploy && nginx == nil {
+		return apperror.New(400, "这张证书没有绑定 Nginx，无法部署。可以先单独申请证书")
 	}
 	if cert.ChallengeType != ChallengeDNS01 {
+		if nginx == nil {
+			return apperror.New(400, "HTTP-01 需要 Nginx 数据源提供验证目录")
+		}
 		info, err := os.Stat(nginxCfg.Webroot)
 		if err != nil || !info.IsDir() {
 			return apperror.New(400, "ACME webroot 不存在，请先准备 Nginx 的 HTTP-01 目录")

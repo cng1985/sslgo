@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h1>签发流水线</h1>
-        <p>Extract 读取配置，Transform 向 ACME 申请证书，Load 替换文件并重启 Nginx。</p>
+        <p>Extract 读取配置，Transform 向 ACME 申请证书。选择部署时，Load 才会替换文件并重启 Nginx。</p>
       </div>
     </div>
     <div class="panel">
@@ -14,9 +14,10 @@
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" width="160">
+        <el-table-column label="操作" width="220">
           <template #default="{ row }">
-            <el-button v-if="auth.can('etlJob:execute')" link type="primary" @click="execute(row)">执行</el-button>
+            <el-button v-if="auth.can('etlJob:execute')" link type="primary" @click="execute(row, false)">只申请</el-button>
+            <el-button v-if="auth.can('etlJob:execute')" link @click="execute(row, true)">申请并部署</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -45,9 +46,9 @@ async function load() {
   }
 }
 
-async function execute(row) {
-  const created = await http.post('/etlJob/execute', { id: row.id, force: true })
-  ElMessage.success(`已提交任务 #${created.data.id}`)
+async function execute(row, deploy) {
+  const created = await http.post('/etlJob/execute', { id: row.id, force: true, deploy })
+  ElMessage.success(deploy ? `已提交部署任务 #${created.data.id}` : `已提交申请任务 #${created.data.id}`)
 }
 
 onMounted(load)

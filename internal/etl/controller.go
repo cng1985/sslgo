@@ -29,7 +29,7 @@ func RegisterRouter(r httpapi.Router, c *Controller) {
 			{Name: "challengeType", Type: "string", Required: false, Description: "http-01 或 dns-01，默认 http-01。dns-01 使用 ACME 账户绑定的云厂商 DNS"},
 			{Name: "keyType", Type: "string", Required: false, Description: "ec256 或 rsa2048，默认 ec256"},
 			{Name: "acmeDataSourceId", Type: "number", Required: true, Description: "ACME 数据源 ID"},
-			{Name: "nginxDataSourceId", Type: "number", Required: true, Description: "Nginx 数据源 ID"},
+			{Name: "nginxDataSourceId", Type: "number", Required: false, Description: "Nginx 数据源 ID。DNS-01 可以不填，此时只申请证书，不部署"},
 			{Name: "renewBeforeDays", Type: "number", Required: false, Description: "到期前多少天续期，默认 30"},
 			{Name: "autoRenew", Type: "boolean", Required: false, Description: "是否允许调度自动续期"},
 			{Name: "agreeTos", Type: "boolean", Required: true, Description: "是否同意 ACME 服务条款"},
@@ -46,7 +46,7 @@ func RegisterRouter(r httpapi.Router, c *Controller) {
 			{Name: "challengeType", Type: "string", Required: false, Description: "http-01 或 dns-01"},
 			{Name: "keyType", Type: "string", Required: false, Description: "ec256 或 rsa2048"},
 			{Name: "acmeDataSourceId", Type: "number", Required: true, Description: "ACME 数据源 ID"},
-			{Name: "nginxDataSourceId", Type: "number", Required: true, Description: "Nginx 数据源 ID"},
+			{Name: "nginxDataSourceId", Type: "number", Required: false, Description: "Nginx 数据源 ID。传 0 表示解除绑定，之后只能单独申请"},
 			{Name: "renewBeforeDays", Type: "number", Required: false, Description: "续期窗口天数"},
 			{Name: "autoRenew", Type: "boolean", Required: false, Description: "是否自动续期"},
 			{Name: "agreeTos", Type: "boolean", Required: true, Description: "是否同意服务条款"},
@@ -63,7 +63,7 @@ func RegisterRouter(r httpapi.Router, c *Controller) {
 		Fields: []httpapi.Field{
 			{Name: "page", Type: "number", Required: false, Description: "页码"},
 			{Name: "size", Type: "number", Required: false, Description: "每页条数"},
-			{Name: "filters.status", Type: "string", Required: false, Description: "draft、issuing、deployed 或 failed"},
+			{Name: "filters.status", Type: "string", Required: false, Description: "draft、issuing、issued、deployed 或 failed"},
 			{Name: "filters.keyword", Type: "string", Required: false, Description: "名称或域名关键字"},
 		},
 	}, c.ListCertificates)
@@ -74,15 +74,28 @@ func RegisterRouter(r httpapi.Router, c *Controller) {
 	}, c.DetailCertificate)
 	r.Protected(httpapi.Meta{
 		Resource: "certificate", Action: "issue", Path: "/certificate/issue",
-		Summary: "执行签发流水线：申请证书、替换旧文件并重启 Nginx",
+		Summary: "申请证书并部署：替换旧文件后重启 Nginx。证书必须已绑定 Nginx",
 		Fields: []httpapi.Field{
 			{Name: "id", Type: "number", Required: true, Description: "证书 ID"},
 			{Name: "force", Type: "boolean", Required: false, Description: "为 true 时忽略续期窗口，立即重新签发"},
 		},
 	}, c.Issue)
 	r.Protected(httpapi.Meta{
+		Resource: "certificate", Action: "apply", Path: "/certificate/apply",
+		Summary: "单独申请证书：向 ACME 签发并保存材料，不写 Nginx、不重启",
+		Fields: []httpapi.Field{
+			{Name: "id", Type: "number", Required: true, Description: "证书 ID"},
+			{Name: "force", Type: "boolean", Required: false, Description: "为 true 时忽略续期窗口，立即重新申请"},
+		},
+	}, c.Apply)
+	r.Protected(httpapi.Meta{
+		Resource: "certificate", Action: "download", Path: "/certificate/download",
+		Summary: "下载已申请的证书、私钥和颁发者证书。列表和详情不返回私钥",
+		Fields:  []httpapi.Field{{Name: "id", Type: "number", Required: true, Description: "证书 ID"}},
+	}, c.Download)
+	r.Protected(httpapi.Meta{
 		Resource: "certificate", Action: "deploy", Path: "/certificate/deploy",
-		Summary: "不重新申请，使用已落地的证书文件再次重启 Nginx",
+		Summary: "不重新申请。已保存的证书会写入 Nginx 后重启；只有磁盘文件时只重启",
 		Fields:  []httpapi.Field{{Name: "id", Type: "number", Required: true, Description: "证书 ID"}},
 	}, c.Deploy)
 
@@ -128,6 +141,7 @@ func RegisterRouter(r httpapi.Router, c *Controller) {
 		Fields: []httpapi.Field{
 			{Name: "id", Type: "number", Required: true, Description: "流水线 ID"},
 			{Name: "force", Type: "boolean", Required: false, Description: "是否强制重新签发"},
+			{Name: "deploy", Type: "boolean", Required: false, Description: "为 false 时只申请证书。省略时：已绑定 Nginx 则部署，否则只申请"},
 		},
 	}, c.Execute)
 	r.Protected(httpapi.Meta{
@@ -218,6 +232,36 @@ func (c *Controller) Issue(ctx *gin.Context) {
 	}
 	tc, _ := tenant.From(ctx.Request.Context())
 	view, err := c.svc.Issue(ctx.Request.Context(), tc.TenantID, tc.UserID, req)
+	if err != nil {
+		response.FromError(ctx, err)
+		return
+	}
+	response.OK(ctx, view)
+}
+
+func (c *Controller) Apply(ctx *gin.Context) {
+	var req CertificateIssueRequest
+	if err := bind.JSON(ctx, &req); err != nil {
+		response.FromError(ctx, err)
+		return
+	}
+	tc, _ := tenant.From(ctx.Request.Context())
+	view, err := c.svc.Apply(ctx.Request.Context(), tc.TenantID, tc.UserID, req)
+	if err != nil {
+		response.FromError(ctx, err)
+		return
+	}
+	response.OK(ctx, view)
+}
+
+func (c *Controller) Download(ctx *gin.Context) {
+	var req CertificateIDRequest
+	if err := bind.JSON(ctx, &req); err != nil {
+		response.FromError(ctx, err)
+		return
+	}
+	tc, _ := tenant.From(ctx.Request.Context())
+	view, err := c.svc.Download(ctx.Request.Context(), tc.TenantID, req.ID)
 	if err != nil {
 		response.FromError(ctx, err)
 		return

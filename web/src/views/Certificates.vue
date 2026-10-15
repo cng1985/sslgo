@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h1>证书</h1>
-        <p>用 ACME 账户申请证书。HTTP-01 走 Nginx 目录，DNS-01 走账户绑定的云厂商，可签发通配符。</p>
+        <p>可以只向 ACME 申请，也可以申请后立刻部署到 Nginx。DNS-01 不选 Nginx 也能单独申请，私钥稍后下载。</p>
       </div>
       <el-button v-if="auth.can('certificate:create')" type="primary" @click="openCreate">新建证书</el-button>
     </div>
@@ -26,10 +26,12 @@
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" width="280">
+        <el-table-column label="操作" width="340">
           <template #default="{ row }">
-            <el-button v-if="auth.can('certificate:issue')" link type="primary" @click="issue(row, true)">签发并部署</el-button>
-            <el-button v-if="auth.can('certificate:deploy')" link @click="deploy(row)">重启 Nginx</el-button>
+            <el-button v-if="auth.can('certificate:apply')" link type="primary" @click="apply(row)">申请</el-button>
+            <el-button v-if="auth.can('certificate:issue') && row.nginxDataSourceId" link type="primary" @click="issue(row)">签发并部署</el-button>
+            <el-button v-if="canDeploy(row)" link @click="deploy(row)">{{ row.status === 'deployed' ? '重启 Nginx' : '部署' }}</el-button>
+            <el-button v-if="canDownload(row)" link @click="download(row)">下载</el-button>
             <el-button v-if="auth.can('certificate:delete')" link type="danger" @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -49,14 +51,15 @@
             <el-radio value="dns-01">DNS-01</el-radio>
           </el-radio-group>
         </el-form-item>
-        <p v-if="form.challengeType === 'dns-01'" class="hint">DNS-01 使用 ACME 账户里绑定的云厂商 DNS。通配符只能走这条路径。</p>
+        <p v-if="form.challengeType === 'dns-01'" class="hint">DNS-01 使用 ACME 账户里绑定的云厂商 DNS。通配符只能走这条路径。不选 Nginx 时只申请证书，不会部署。</p>
+        <p v-else class="hint">HTTP-01 必须选择 Nginx，验证文件会写到它的 webroot。仍可以只申请，不立刻重启。</p>
         <el-form-item label="ACME 数据源">
           <el-select v-model="form.acmeDataSourceId" style="width: 100%">
             <el-option v-for="item in acmeSources" :key="item.id" :label="item.name" :value="item.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="Nginx 数据源">
-          <el-select v-model="form.nginxDataSourceId" style="width: 100%">
+          <el-select v-model="form.nginxDataSourceId" clearable placeholder="不选则只申请，不部署" style="width: 100%">
             <el-option v-for="item in nginxSources" :key="item.id" :label="item.name" :value="item.id" />
           </el-select>
         </el-form-item>
@@ -95,7 +98,7 @@ const status = ref('')
 const loading = ref(false)
 const open = ref(false)
 const sources = ref([])
-const statuses = ['draft', 'issuing', 'deployed', 'failed']
+const statuses = ['draft', 'issuing', 'issued', 'deployed', 'failed']
 const form = reactive({
   name: '', domainText: '', acmeDataSourceId: null, nginxDataSourceId: null,
   challengeType: 'http-01', keyType: 'ec256', renewBeforeDays: 30, autoRenew: true, agreeTos: false
@@ -144,17 +147,40 @@ async function create() {
   load()
 }
 
-async function issue(row, force) {
+function canDeploy(row) {
+  return auth.can('certificate:deploy') && row.nginxDataSourceId && row.status !== 'issuing' && (row.status === 'issued' || row.status === 'deployed' || row.lastIssuedAt)
+}
+
+function canDownload(row) {
+  return auth.can('certificate:download') && row.lastIssuedAt && row.status !== 'issuing'
+}
+
+async function apply(row) {
+  try {
+    await ElMessageBox.confirm(`将为 ${row.domains.join('、')} 向 ACME 申请证书，不会替换 Nginx 上的文件，也不会重启服务。`, '单独申请')
+  } catch {
+    return
+  }
+  const created = await http.post('/certificate/apply', { id: row.id, force: true })
+  await finishTask(created.data.id)
+}
+
+async function issue(row) {
   try {
     await ElMessageBox.confirm(`将为 ${row.domains.join('、')} 申请证书，成功后替换旧文件并重启 Nginx。`, '签发并部署')
   } catch {
     return
   }
-  const created = await http.post('/certificate/issue', { id: row.id, force })
+  const created = await http.post('/certificate/issue', { id: row.id, force: true })
+  await finishTask(created.data.id)
+}
+
+async function finishTask(id) {
   ElMessage.info('任务已开始')
-  const task = await poll(created.data.id)
+  const task = await poll(id)
   if (task.status === 'failed') {
     ElMessage.error(task.error || '签发失败')
+    load()
     return
   }
   ElMessage.success(task.result?.message || statusText(task.status))
@@ -162,10 +188,28 @@ async function issue(row, force) {
 }
 
 async function deploy(row) {
-  await ElMessageBox.confirm('将使用已落地的证书文件重新检测并重启 Nginx。', '重启 Nginx')
+  const title = row.status === 'deployed' ? '重启 Nginx' : '部署到 Nginx'
+  const message = row.status === 'deployed'
+    ? '将使用已申请的证书重新写入文件，检测配置后重启 Nginx。'
+    : '将把已申请的证书写入 Nginx 目录，检测配置后重启服务。'
+  await ElMessageBox.confirm(message, title)
   const body = await http.post('/certificate/deploy', { id: row.id })
   ElMessage.success(body.data.result?.message || '已执行')
   load()
+}
+
+async function download(row) {
+  const body = await http.post('/certificate/download', { id: row.id })
+  const material = body.data
+  const text = [material.certPem, material.keyPem, material.issuerPem].filter(Boolean).join('\n')
+  const blob = new Blob([text], { type: 'application/x-pem-file' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${String(row.name || 'certificate').replace(/[^\w.\-\u4e00-\u9fa5]+/g, '_')}.pem`
+  link.click()
+  URL.revokeObjectURL(url)
+  ElMessage.success('证书已下载')
 }
 
 async function remove(row) {

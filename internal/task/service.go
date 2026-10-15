@@ -48,7 +48,7 @@ func toView(item *Task) View {
 	return View{
 		ID: item.ID, ETLJobID: item.ETLJobID, CertificateID: item.CertificateID,
 		UserID: item.UserID, Trigger: item.Trigger, Status: item.Status, Stage: item.Stage,
-		Force: item.Force, Error: item.Error, Result: result,
+		Force: item.Force, Deploy: item.Deploy, Error: item.Error, Result: result,
 		StartedAt: item.StartedAt, FinishedAt: item.FinishedAt, CreatedAt: item.CreatedAt,
 	}
 }

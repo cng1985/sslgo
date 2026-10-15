@@ -132,7 +132,7 @@ func seedAdmin(db *gorm.DB, cfg *config.Config) error {
 		}
 		roles := []auth.Role{
 			{TenantID: tenant.ID, Code: auth.RoleAdmin, Name: "管理员", Description: "当前租户全部权限", BuiltIn: true},
-			{TenantID: tenant.ID, Code: auth.RoleOperator, Name: "运维", Description: "签发证书、部署并管理调度", BuiltIn: true},
+			{TenantID: tenant.ID, Code: auth.RoleOperator, Name: "运维", Description: "单独申请或部署证书，并管理调度", BuiltIn: true},
 			{TenantID: tenant.ID, Code: auth.RoleViewer, Name: "只读", Description: "查看证书、任务和流水线", BuiltIn: true},
 		}
 		for i := range roles {
