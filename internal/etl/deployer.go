@@ -2,10 +2,12 @@ package etl
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"sslplatform/internal/common/proc"
@@ -32,7 +34,8 @@ type DeployResult struct {
 	Action      string
 }
 
-// NginxDeployer 把证书写入目标目录，检测配置后重启或重载 Nginx。
+// NginxDeployer 按域名覆盖证书目录里的 pem 和 key，然后重启或重载 Nginx。
+// 不会写入或修改 Nginx 配置文件。
 type NginxDeployer interface {
 	Deploy(ctx context.Context, req DeployRequest) (*DeployResult, error)
 }
@@ -49,22 +52,10 @@ func (nginxDeployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResu
 	if err := os.MkdirAll(certDir, 0o750); err != nil {
 		return nil, fmt.Errorf("创建证书目录失败: %w", err)
 	}
-	crt, key, chain := artifactPaths(certDir, req.CertificateID)
-	result := &DeployResult{CertPath: crt, KeyPath: key, ChainPath: chain, Action: req.Nginx.Action}
-	var snippet string
-	if req.Nginx.SnippetDir != "" {
-		dir, err := proc.SafeDir(req.Nginx.SnippetDir)
-		if err != nil {
-			return nil, err
-		}
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, err
-		}
-		snippet = filepath.Join(dir, fmt.Sprintf("sslplatform-cert-%d.conf", req.CertificateID))
-		result.SnippetPath = snippet
-	}
+	pemPath, keyPath := certificatePaths(certDir, req.Domains)
+	result := &DeployResult{CertPath: pemPath, KeyPath: keyPath, Action: req.Nginx.Action}
 	if req.RestartOnly {
-		if err := filesExist(crt, key); err != nil {
+		if err := filesExist(pemPath, keyPath); err != nil {
 			return nil, err
 		}
 		if err := applyNginx(ctx, req.Nginx); err != nil {
@@ -75,14 +66,13 @@ func (nginxDeployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResu
 		}
 		return result, nil
 	}
-	if req.CertPEM == "" || req.KeyPEM == "" {
+	certBody := nginxCertificateBody(req.CertPEM, req.IssuerPEM)
+	keyBody := nginxPrivateKeyBody(req.KeyPEM)
+	if certBody == "" || keyBody == "" {
 		return nil, errors.New("证书或私钥为空")
 	}
-	snaps := make([]snapshot, 0, 4)
-	for _, path := range []string{crt, key, chain, snippet} {
-		if path == "" {
-			continue
-		}
+	snaps := make([]snapshot, 0, 2)
+	for _, path := range []string{pemPath, keyPath} {
 		shot, err := takeSnapshot(path)
 		if err != nil {
 			return nil, err
@@ -94,30 +84,13 @@ func (nginxDeployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResu
 			_ = snaps[i].restore()
 		}
 	}
-	writes := []struct {
-		path string
-		body string
-		mode os.FileMode
-	}{
-		{crt, req.CertPEM, 0o644},
-		{key, req.KeyPEM, 0o600},
-		{chain, req.IssuerPEM, 0o644},
+	if err := writeAtomic(pemPath, []byte(certBody), 0o644); err != nil {
+		restore()
+		return nil, err
 	}
-	for _, file := range writes {
-		if file.body == "" && file.path == chain {
-			continue
-		}
-		if err := writeAtomic(file.path, []byte(file.body), file.mode); err != nil {
-			restore()
-			return nil, err
-		}
-	}
-	if snippet != "" {
-		body := nginxSnippet(req.Domains, crt, key, req.Nginx.Webroot)
-		if err := writeAtomic(snippet, []byte(body), 0o644); err != nil {
-			restore()
-			return nil, err
-		}
+	if err := writeAtomic(keyPath, []byte(keyBody), 0o600); err != nil {
+		restore()
+		return nil, err
 	}
 	if err := applyNginx(ctx, req.Nginx); err != nil {
 		restore()
@@ -130,35 +103,58 @@ func (nginxDeployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResu
 	return result, nil
 }
 
-func artifactPaths(certDir string, id uint) (string, string, string) {
-	stem := fmt.Sprintf("cert-%d", id)
-	return filepath.Join(certDir, stem+".crt"),
-		filepath.Join(certDir, stem+".key"),
-		filepath.Join(certDir, stem+".issuer.crt")
+// certificatePaths 用主域名命名 Nginx 已经引用的证书文件。
+// *.nbsaas.com 写成 /usr/local/nginx/conf/certs/nbsaas.com.pem 和 nbsaas.com.key。
+func certificatePaths(certDir string, domains []string) (string, string) {
+	stem := nginxFileStem(domains)
+	return filepath.Join(certDir, stem+".pem"), filepath.Join(certDir, stem+".key")
 }
 
-func nginxSnippet(domains []string, crt, key, webroot string) string {
-	names := ""
-	for i, d := range domains {
-		if i > 0 {
-			names += " "
-		}
-		names += d
+func nginxCertificateBody(certPEM, issuerPEM string) string {
+	cert := strings.TrimSpace(certPEM)
+	issuer := strings.TrimSpace(issuerPEM)
+	if cert == "" {
+		return withTrailingNewline(issuer)
 	}
-	return fmt.Sprintf(`server {
-    listen 443 ssl;
-    server_name %s;
-    ssl_certificate %s;
-    ssl_certificate_key %s;
-    location ^~ /.well-known/acme-challenge/ {
-        root %s;
-    }
-    location / {
-        default_type text/plain;
-        return 200 'sslplatform certificate is active\n';
-    }
+	if parsed, err := nginxFullChain(cert, issuer); err == nil {
+		return parsed
+	}
+	if issuer == "" || issuer == cert || strings.Contains(cert, issuer) {
+		return withTrailingNewline(cert)
+	}
+	return cert + "\n" + issuer + "\n"
 }
-`, names, crt, key, webroot)
+
+func nginxPrivateKeyBody(keyPEM string) string {
+	return withTrailingNewline(strings.TrimSpace(keyPEM))
+}
+
+func withTrailingNewline(text string) string {
+	if text == "" || strings.HasSuffix(text, "\n") {
+		return text
+	}
+	return text + "\n"
+}
+
+func nginxFullChain(certPEM, issuerPEM string) (string, error) {
+	certs, err := parseCertificates(certPEM, issuerPEM)
+	if err != nil {
+		return "", err
+	}
+	seen := map[string]struct{}{}
+	ordered := make([]*x509.Certificate, 0, len(certs))
+	for _, cert := range certs {
+		raw := string(cert.Raw)
+		if _, ok := seen[raw]; ok {
+			continue
+		}
+		seen[raw] = struct{}{}
+		ordered = append(ordered, cert)
+	}
+	if len(ordered) == 0 {
+		return "", errors.New("证书 PEM 无效")
+	}
+	return encodeCerts(ordered), nil
 }
 
 func applyNginx(ctx context.Context, cfg datasource.NginxConfig) error {

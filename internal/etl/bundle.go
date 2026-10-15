@@ -129,22 +129,21 @@ func validBundlePassword(password string) error {
 	return nil
 }
 
-func readMaterialFiles(certDir string, id uint) (string, string, string, error) {
+func readMaterialFiles(certDir string, domains []string) (string, string, string, error) {
 	dir, err := proc.SafeDir(certDir)
 	if err != nil {
 		return "", "", "", err
 	}
-	crt, key, chain := artifactPaths(dir, id)
-	certBytes, err := os.ReadFile(crt)
+	pemPath, keyPath := certificatePaths(dir, domains)
+	certBytes, err := os.ReadFile(pemPath)
 	if err != nil {
 		return "", "", "", err
 	}
-	keyBytes, err := os.ReadFile(key)
+	keyBytes, err := os.ReadFile(keyPath)
 	if err != nil {
 		return "", "", "", err
 	}
-	chainBytes, _ := os.ReadFile(chain)
-	return string(certBytes), string(keyBytes), string(chainBytes), nil
+	return string(certBytes), string(keyBytes), "", nil
 }
 
 type zipEntry struct {
@@ -317,7 +316,7 @@ func formatExpiry(t time.Time) string {
 	return t.UTC().Format("2006-01-02 15:04:05 UTC")
 }
 
-// nginxFileStem 用主域名做 Nginx 包内文件名。*.nbssas.com 去掉 *. 后是 nbssas.com。
+// nginxFileStem 用主域名做 Nginx 文件名。*.nbsaas.com 去掉 *. 后是 nbsaas.com。
 func nginxFileStem(domains []string) string {
 	raw := ""
 	for _, domain := range domains {

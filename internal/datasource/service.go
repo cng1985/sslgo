@@ -477,11 +477,8 @@ func validateNginx(cfg NginxConfig) (NginxConfig, error) {
 	if cfg.CertDir, err = proc.SafeDir(cfg.CertDir); err != nil {
 		return cfg, apperror.New(400, "certDir "+err.Error())
 	}
-	if cfg.SnippetDir != "" {
-		if cfg.SnippetDir, err = proc.SafeDir(cfg.SnippetDir); err != nil {
-			return cfg, apperror.New(400, "snippetDir "+err.Error())
-		}
-	}
+	// 部署只覆盖证书目录中的域名文件，不写入 Nginx 配置。
+	cfg.SnippetDir = ""
 	switch cfg.ServiceManager {
 	case ManagerSystemd:
 		if !proc.ValidService(cfg.ServiceName) {

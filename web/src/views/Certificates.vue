@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h1>证书</h1>
-        <p>可以只向 ACME 申请，也可以申请后立刻部署到 Nginx。Nginx 压缩包里是域名.pem 和域名.key，通配符 *.nbssas.com 会写成 nbssas.com.pem 与 nbssas.com.key。</p>
+        <p>可以只向 ACME 申请，也可以申请后立刻部署到 Nginx。部署只覆盖证书目录里的域名.pem 和域名.key，例如 /usr/local/nginx/conf/certs/nbsaas.com.pem，然后重启 Nginx，不会修改配置文件。</p>
       </div>
       <el-button v-if="auth.can('certificate:create')" type="primary" @click="openCreate">新建证书</el-button>
     </div>
@@ -249,8 +249,8 @@ async function download(row, format) {
 async function deploy(row) {
   const title = row.status === 'deployed' ? '重启 Nginx' : '部署到 Nginx'
   const message = row.status === 'deployed'
-    ? '将使用已申请的证书重新写入文件，检测配置后重启 Nginx。'
-    : '将把已申请的证书写入 Nginx 目录，检测配置后重启服务。'
+    ? '将按域名覆盖已有的 pem 和 key，然后重启 Nginx，不会修改配置文件。'
+    : '将按域名覆盖证书目录中的 pem 和 key，然后重启 Nginx，不会修改配置文件。'
   await ElMessageBox.confirm(message, title)
   const body = await http.post('/certificate/deploy', { id: row.id })
   ElMessage.success(body.data.result?.message || '已执行')

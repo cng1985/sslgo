@@ -26,7 +26,7 @@ func RegisterRouter(r httpapi.Router, c *Controller) {
 			{Name: "name", Type: "string", Required: true, Description: "数据源名称"},
 			{Name: "type", Type: "string", Required: true, Description: "acme 或 nginx"},
 			{Name: "description", Type: "string", Required: false, Description: "说明"},
-			{Name: "config", Type: "object", Required: true, Description: "acme: email、ca、directoryURL、eabKid、eabHmacKey、termsAgreed、dnsProvider、dns、register；nginx: nginxBin、serviceManager、serviceName、action、webroot、certDir、snippetDir、testBefore、dryRun"},
+			{Name: "config", Type: "object", Required: true, Description: "acme: email、ca、directoryURL、eabKid、eabHmacKey、termsAgreed、dnsProvider、dns、register；nginx: nginxBin、serviceManager、serviceName、action、webroot、certDir、testBefore、dryRun。部署只按域名覆盖 certDir 中的 pem 与 key，然后重启 Nginx，不修改配置文件"},
 		},
 	}, c.Create)
 	r.Protected(httpapi.Meta{

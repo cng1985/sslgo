@@ -23,7 +23,7 @@ const (
 )
 
 // Certificate 记录一张 Let's Encrypt 证书的申请和部署状态。
-// 私钥不出现在列表和详情里。单独申请时保存在 KeyPEM，只能通过下载接口取出；部署后也会写入 Nginx 的 certDir。
+// 私钥不出现在列表和详情里。单独申请时保存在 KeyPEM，只能通过下载接口取出；部署后按域名写入 Nginx 的 certDir。
 type Certificate struct {
 	entity.Base
 	TenantID          uint       `gorm:"not null;uniqueIndex:idx_cert_name" json:"tenantId"`

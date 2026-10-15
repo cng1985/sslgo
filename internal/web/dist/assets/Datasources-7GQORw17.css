@@ -1,0 +1,1 @@
+.source-dialog.el-dialog{max-height:calc(100vh - 48px);display:flex;flex-direction:column}.source-dialog .el-dialog__body{overflow:auto}

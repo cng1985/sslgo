@@ -177,27 +177,27 @@ func TestBundleRejects(t *testing.T) {
 
 func TestReadMaterialFiles(t *testing.T) {
 	dir := t.TempDir()
-	crt, key, chain := artifactPaths(dir, 7)
-	if err := os.WriteFile(crt, []byte("CERT"), 0o644); err != nil {
+	pemPath, keyPath := certificatePaths(dir, []string{"*.nbsaas.com"})
+	if err := os.WriteFile(pemPath, []byte("CERT"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(key, []byte("KEY"), 0o600); err != nil {
+	if err := os.WriteFile(keyPath, []byte("KEY"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(chain, []byte("CHAIN"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gotCert, gotKey, gotChain, err := readMaterialFiles(dir, 7)
+	gotCert, gotKey, gotChain, err := readMaterialFiles(dir, []string{"*.nbsaas.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotCert != "CERT" || gotKey != "KEY" || gotChain != "CHAIN" {
+	if gotCert != "CERT" || gotKey != "KEY" || gotChain != "" {
 		t.Fatalf("got %s %s %s", gotCert, gotKey, gotChain)
 	}
-	if _, _, _, err := readMaterialFiles("relative", 7); err == nil {
+	if pemPath != filepath.Join(dir, "nbsaas.com.pem") || keyPath != filepath.Join(dir, "nbsaas.com.key") {
+		t.Fatalf("paths=%s %s", pemPath, keyPath)
+	}
+	if _, _, _, err := readMaterialFiles("relative", []string{"nbsaas.com"}); err == nil {
 		t.Fatal("应拒绝相对路径")
 	}
-	if _, _, _, err := readMaterialFiles(filepath.Join(dir, "missing"), 7); err == nil {
+	if _, _, _, err := readMaterialFiles(filepath.Join(dir, "missing"), []string{"nbsaas.com"}); err == nil {
 		t.Fatal("缺少文件时应失败")
 	}
 }

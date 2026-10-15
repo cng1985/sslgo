@@ -153,7 +153,7 @@ func (s *ETLService) certificateMaterial(ctx context.Context, item *Certificate)
 		nginx, err := s.sources.Get(ctx, item.TenantID, item.NginxDataSourceID)
 		if err == nil {
 			if cfg, err := datasource.ParseNginx(nginx.ConfigJSON); err == nil {
-				diskCert, diskKey, diskIssuer, err := readMaterialFiles(cfg.CertDir, item.ID)
+				diskCert, diskKey, diskIssuer, err := readMaterialFiles(cfg.CertDir, decodeDomains(item.DomainsJSON))
 				if err == nil {
 					if strings.TrimSpace(certPEM) == "" {
 						certPEM = diskCert
@@ -250,8 +250,8 @@ func (s *ETLService) DeployExisting(ctx context.Context, tenantID, userID, id ui
 	}
 	hasMaterial := strings.TrimSpace(cert.CertPEM) != "" && strings.TrimSpace(cert.KeyPEM) != ""
 	if !hasMaterial {
-		crt, key, _ := artifactPaths(cfg.CertDir, id)
-		if err := filesExist(crt, key); err != nil {
+		pemPath, keyPath := certificatePaths(cfg.CertDir, decodeDomains(cert.DomainsJSON))
+		if err := filesExist(pemPath, keyPath); err != nil {
 			return nil, apperror.New(400, "还没有可部署的证书，请先申请")
 		}
 	}
@@ -678,7 +678,7 @@ func (s *ETLService) view(ctx context.Context, item *Certificate, jobID uint) (*
 	}
 	if nginx, err := s.sources.Get(ctx, item.TenantID, item.NginxDataSourceID); err == nil {
 		if cfg, err := datasource.ParseNginx(nginx.ConfigJSON); err == nil && cfg.CertDir != "" {
-			view.CertPath, view.KeyPath, view.ChainPath = artifactPaths(cfg.CertDir, item.ID)
+			view.CertPath, view.KeyPath = certificatePaths(cfg.CertDir, decodeDomains(item.DomainsJSON))
 		}
 	}
 	return view, nil

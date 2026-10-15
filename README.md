@@ -37,7 +37,7 @@ SQLite 文件默认是 `data/sslplatform.db`，权限 `0600`。启动时自动�
 | tasks | 每次执行的阶段和结果 |
 | schedules | 续期计划 |
 
-私钥不放进列表、详情和通用查询。单独申请时，证书私钥保存在证书记录里，只能通过下载接口取出；部署后仍会写入 Nginx 的 `certDir/cert-{id}.key`。账户私钥留在数据源配置中。
+私钥不放进列表、详情和通用查询。单独申请时，证书私钥保存在证书记录里，只能通过下载接口取出；部署后会按域名覆盖 Nginx 证书目录里的 `域名.key`，例如 `/usr/local/nginx/conf/certs/nbsaas.com.key`。账户私钥留在数据源配置中。
 
 首次启动会创建租户 `default`、角色 `admin` / `operator` / `viewer`，以及管理员。默认账号 `admin`，密码来自 `SSL_ADMIN_PASSWORD`，未设置时是 `Admin@123456`。请立刻修改。
 
@@ -47,7 +47,7 @@ SQLite 文件默认是 `data/sslplatform.db`，权限 `0600`。启动时自动�
 
 1. **Extract**：按登录态里的租户读取证书、ACME 账户和 Nginx 目标。未进入续期窗口则停止。
 2. **Transform**：按验证方式申请证书。`http-01` 把挑战文件写到 Nginx webroot。`dns-01` 调用 ACME 账户绑定的云厂商 DNS，写入 `_acme-challenge` TXT 记录，因此可以签发通配符。
-3. **Load**：仅在需要部署时执行。备份旧文件，写入新的 `cert-{id}.crt`、`.key`、`.issuer.crt`，执行 `nginx -t`，再按配置重启或重载 Nginx。检测失败会恢复旧文件。只申请时流水线在 Transform 结束，状态为 `issued`，不写证书目录，也不重启 Nginx。
+3. **Load**：仅在需要部署时执行。按主域名覆盖证书目录里已有的 `域名.pem` 和 `域名.key`（`*.nbsaas.com` 对应 `nbsaas.com.pem` 与 `nbsaas.com.key`），执行 `nginx -t`，再重启或重载 Nginx。不会修改 Nginx 配置文件。检测失败会恢复旧文件。只申请时流水线在 Transform 结束，状态为 `issued`，不写证书目录，也不重启 Nginx。
 
 默认动作是重启。`signal` 模式执行 `nginx -s quit` 后再启动；`systemd` 模式执行 `systemctl restart nginx`。只允许 `nginx`、`systemctl`、`service`，参数按数组传递，不经过 shell。
 
@@ -72,7 +72,7 @@ HTTP-01 在签发前必须能通过 80 端口提供 `webroot/.well-known/acme-ch
 
 | format | 内容 |
 | --- | --- |
-| `nginx` | `域名.pem`、`域名.key`、`nginx.conf`。`*.nbssas.com` 写成 `nbssas.com.pem` 和 `nbssas.com.key` |
+| `nginx` | `域名.pem`、`域名.key`，以及一份仅供对照的 `nginx.conf`。`*.nbsaas.com` 写成 `nbsaas.com.pem` 和 `nbsaas.com.key`。自动部署不会把这份配置写到服务器上 |
 | `httpd` | `server.crt`、`server.key`、`chain.crt`、`httpd.conf`。没有中间证书时省略证书链 |
 | `iis` | `certificate.pfx`、`iis.txt`。请求体要带 8 到 64 位 `password`，PFX 使用 IIS 可导入的传统 PKCS#12 |
 
@@ -139,10 +139,10 @@ docker compose up --build
 
 - 程序 `/usr/sbin/nginx`
 - webroot `/var/www/acme`
-- 证书目录 `/etc/nginx/ssl`
+- 证书目录 `/usr/local/nginx/conf/certs`
 - 动作 `restart`
 
-把域名解析到这台机器，在页面上选择生产 ACME 目录并签发。证书文件名是 `cert-{id}.crt` 与 `cert-{id}.key`。如果填写了片段目录，还会生成 `/etc/nginx/conf.d/sslplatform-cert-{id}.conf`。
+把域名解析到这台机器，在页面上选择生产 ACME 目录并签发。部署只覆盖该目录中的 `域名.pem` 与 `域名.key`，例如 `nbsaas.com.pem` 和 `nbsaas.com.key`，然后重启 Nginx。Nginx 配置需要事先写好这两个文件的路径，平台不会改配置。
 
 ## 测试
 
