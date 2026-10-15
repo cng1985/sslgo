@@ -23,7 +23,7 @@ const (
 )
 
 // Certificate 记录一张 Let's Encrypt 证书的申请和部署状态。
-// 私钥写入数据库供下载使用，同时落在 Nginx 证书目录。列表和详情响应不返回私钥。
+// 私钥不出现在列表和详情里。单独申请时保存在 KeyPEM，只能通过下载接口取出；部署后也会写入 Nginx 的 certDir。
 type Certificate struct {
 	entity.Base
 	TenantID          uint       `gorm:"not null;uniqueIndex:idx_cert_name" json:"tenantId"`
@@ -33,7 +33,7 @@ type Certificate struct {
 	ChallengeType     string     `gorm:"size:32;not null" json:"challengeType"`
 	KeyType           string     `gorm:"size:32;not null" json:"keyType"`
 	ACMEDataSourceID  uint       `gorm:"not null;index" json:"acmeDataSourceId"`
-	NginxDataSourceID uint       `gorm:"not null;index" json:"nginxDataSourceId"`
+	NginxDataSourceID uint       `gorm:"index" json:"nginxDataSourceId"`
 	RenewBeforeDays   int        `json:"renewBeforeDays"`
 	AutoRenew         bool       `json:"autoRenew"`
 	AgreeTOS          bool       `json:"agreeTos"`
@@ -111,6 +111,17 @@ type CertificateIssueRequest struct {
 	Force bool `json:"force"`
 }
 
+// CertificateMaterial 是用户主动下载时才返回的证书和私钥。
+type CertificateMaterial struct {
+	ID          uint     `json:"id"`
+	Name        string   `json:"name"`
+	Domains     []string `json:"domains"`
+	CertPEM     string   `json:"certPem"`
+	KeyPEM      string   `json:"keyPem"`
+	IssuerPEM   string   `json:"issuerPem"`
+	Fingerprint string   `json:"fingerprint"`
+}
+
 type CertificateDeployRequest struct {
 	ID uint `json:"id"`
 }
@@ -155,8 +166,9 @@ type JobIDRequest struct {
 }
 
 type JobExecuteRequest struct {
-	ID    uint `json:"id"`
-	Force bool `json:"force"`
+	ID     uint  `json:"id"`
+	Force  bool  `json:"force"`
+	Deploy *bool `json:"deploy"`
 }
 
 type CertificateView struct {

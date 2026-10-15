@@ -37,7 +37,7 @@ SQLite 文件默认是 `data/sslplatform.db`，权限 `0600`。启动时自动�
 | tasks | 每次执行的阶段和结果 |
 | schedules | 续期计划 |
 
-列表、详情和通用查询不返回私钥。签发成功后，证书私钥写入数据库，同时写到 Nginx 的 `certDir/cert-{id}.key`。账户私钥留在数据源配置中。`POST /api/v1/certificate/download` 按服务器格式打包下载，需要 `certificate:download` 权限。
+私钥不放进列表、详情和通用查询。单独申请时，证书私钥保存在证书记录里，只能通过下载接口取出；部署后仍会写入 Nginx 的 `certDir/cert-{id}.key`。账户私钥留在数据源配置中。
 
 首次启动会创建租户 `default`、角色 `admin` / `operator` / `viewer`，以及管理员。默认账号 `admin`，密码来自 `SSL_ADMIN_PASSWORD`，未设置时是 `Admin@123456`。请立刻修改。
 
@@ -47,9 +47,18 @@ SQLite 文件默认是 `data/sslplatform.db`，权限 `0600`。启动时自动�
 
 1. **Extract**：按登录态里的租户读取证书、ACME 账户和 Nginx 目标。未进入续期窗口则停止。
 2. **Transform**：按验证方式申请证书。`http-01` 把挑战文件写到 Nginx webroot。`dns-01` 调用 ACME 账户绑定的云厂商 DNS，写入 `_acme-challenge` TXT 记录，因此可以签发通配符。
-3. **Load**：备份旧文件，写入新的 `cert-{id}.crt`、`.key`、`.issuer.crt`，执行 `nginx -t`，再按配置重启或重载 Nginx。检测失败会恢复旧文件。
+3. **Load**：仅在需要部署时执行。备份旧文件，写入新的 `cert-{id}.crt`、`.key`、`.issuer.crt`，执行 `nginx -t`，再按配置重启或重载 Nginx。检测失败会恢复旧文件。只申请时流水线在 Transform 结束，状态为 `issued`，不写证书目录，也不重启 Nginx。
 
 默认动作是重启。`signal` 模式执行 `nginx -s quit` 后再启动；`systemd` 模式执行 `systemctl restart nginx`。只允许 `nginx`、`systemctl`、`service`，参数按数组传递，不经过 shell。
+
+证书可以不绑定 Nginx。DNS-01 创建时省略 `nginxDataSourceId` 即可单独申请，适合先拿到证书再自行安装。HTTP-01 仍需要 Nginx 的 webroot 完成验证，但可以只申请、不立刻重启。
+
+- `POST /api/v1/certificate/apply`：只向 ACME 申请。
+- `POST /api/v1/certificate/issue`：申请并部署，证书必须已绑定 Nginx。
+- `POST /api/v1/certificate/download`：取回证书、私钥和颁发者证书。
+- `POST /api/v1/certificate/deploy`：把已申请的材料写入 Nginx 并重启。库里没有材料时，沿用磁盘上的证书文件只做重启。
+
+调度续期时，没绑定 Nginx 的证书只会重新申请。`POST /api/v1/etlJob/execute` 可以传 `deploy: false`；省略时，已绑定 Nginx 就部署，否则只申请。
 
 HTTP-01 在签发前必须能通过 80 端口提供 `webroot/.well-known/acme-challenge/`。通配符只能使用 DNS-01，并且 ACME 账户要先绑定云厂商 DNS。
 

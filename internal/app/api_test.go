@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -236,6 +237,76 @@ func TestPlatformFlow(t *testing.T) {
 		t.Fatalf("通配符签发失败: %+v", wildResult)
 	}
 
+	mustPost(t, base, "/api/v1/certificate/create", token, map[string]any{
+		"name": "缺少验证目录", "domains": []string{"http.example.com"}, "challengeType": "http-01",
+		"agreeTos": true, "acmeDataSourceId": acme["id"],
+	}, 400)
+	only := decodeData(t, mustPost(t, base, "/api/v1/certificate/create", token, map[string]any{
+		"name": "仅申请", "domains": []string{"only.example.com"}, "challengeType": "dns-01",
+		"agreeTos": true, "acmeDataSourceId": cloud["id"],
+	}, 200))
+	if only["nginxDataSourceId"].(float64) != 0 || only["status"] != "draft" {
+		t.Fatalf("单独申请证书=%v", only)
+	}
+	mustPost(t, base, "/api/v1/certificate/issue", token, map[string]any{"id": only["id"], "force": true}, 400)
+	mustPost(t, base, "/api/v1/etlJob/execute", token, map[string]any{"id": only["jobId"], "force": true, "deploy": true}, 400)
+	applied := decodeData(t, mustPost(t, base, "/api/v1/certificate/apply", token, map[string]any{
+		"id": only["id"], "force": true,
+	}, 200))
+	if applied["deploy"] != false {
+		t.Fatalf("申请任务应标记为不部署: %+v", applied)
+	}
+	appliedTask := waitTask(t, base, token, applied["id"])
+	if appliedTask["status"] != "success" {
+		t.Fatalf("单独申请失败: %+v", appliedTask)
+	}
+	appliedResult := appliedTask["result"].(map[string]any)
+	if appliedResult["issued"] != true || appliedResult["deployed"] != false || !strings.Contains(appliedResult["message"].(string), "尚未部署") {
+		t.Fatalf("单独申请结果=%v", appliedResult)
+	}
+	onlyFile := filepath.Join(certDir, fmt.Sprintf("cert-%.0f.crt", only["id"].(float64)))
+	if _, err := os.Stat(onlyFile); !os.IsNotExist(err) {
+		t.Fatalf("单独申请不应写入证书文件: %v", err)
+	}
+	onlyDetail := decodeData(t, mustPost(t, base, "/api/v1/certificate/detail", token, map[string]any{"id": only["id"]}, 200))
+	if onlyDetail["status"] != "issued" {
+		t.Fatalf("状态=%v", onlyDetail["status"])
+	}
+	if _, ok := onlyDetail["keyPem"]; ok || strings.Contains(mustJSON(onlyDetail), "PRIVATE KEY") {
+		t.Fatal("详情不应返回私钥")
+	}
+	onlyList := mustPost(t, base, "/api/v1/certificate/list", token, map[string]any{
+		"page": 1, "size": 20, "filters": map[string]any{"keyword": "仅申请"},
+	}, 200)
+	if strings.Contains(mustJSON(onlyList), "PRIVATE KEY") {
+		t.Fatal("列表不应返回私钥")
+	}
+	material := decodeData(t, mustPost(t, base, "/api/v1/certificate/download", token, map[string]any{"id": only["id"]}, 200))
+	if !strings.Contains(material["keyPem"].(string), "PRIVATE KEY") || !strings.Contains(material["certPem"].(string), "CERTIFICATE") {
+		t.Fatal("下载结果缺少证书或私钥")
+	}
+	if leaf := readCertPEM(t, material["certPem"].(string)); len(leaf.DNSNames) != 1 || leaf.DNSNames[0] != "only.example.com" {
+		t.Fatalf("下载的证书域名=%v", leaf.DNSNames)
+	}
+	bound := decodeData(t, mustPost(t, base, "/api/v1/certificate/update", token, map[string]any{
+		"id": only["id"], "name": "仅申请", "domains": []string{"only.example.com"}, "challengeType": "dns-01",
+		"agreeTos": true, "acmeDataSourceId": cloud["id"], "nginxDataSourceId": nginx["id"], "keyType": "ec256",
+	}, 200))
+	if bound["nginxDataSourceId"] != nginx["id"] {
+		t.Fatalf("绑定 Nginx 失败: %v", bound["nginxDataSourceId"])
+	}
+	logBeforeDeploy := readFile(t, filepath.Join(dir, "nginx.log"))
+	deployedOnly := decodeData(t, mustPost(t, base, "/api/v1/certificate/deploy", token, map[string]any{"id": only["id"]}, 200))
+	if deployedOnly["status"] != "success" || deployedOnly["result"].(map[string]any)["deployed"] != true {
+		t.Fatalf("部署已申请证书失败: %+v", deployedOnly)
+	}
+	if readFile(t, filepath.Join(dir, "nginx.log")) == logBeforeDeploy {
+		t.Fatal("部署时应重启 Nginx")
+	}
+	if got := readCert(t, onlyFile); len(got.DNSNames) != 1 {
+		t.Fatalf("部署后的证书=%v", got.DNSNames)
+	}
+
 	page := mustPost(t, base, "/api/v1/query/search", token, map[string]any{
 		"model": "pageCertificate", "page": 1, "size": 20, "keyword": "example.com", "filters": map[string]any{},
 	}, 200)
@@ -270,9 +341,8 @@ func TestPlatformFlow(t *testing.T) {
 		"name": "denied", "domains": []string{"denied.example.com"}, "agreeTos": true,
 		"acmeDataSourceId": acme["id"], "nginxDataSourceId": nginx["id"],
 	}, 403)
-	mustPost(t, base, "/api/v1/certificate/download", viewerLogin["token"].(string), map[string]any{
-		"id": cert["id"], "format": "nginx",
-	}, 403)
+	mustPost(t, base, "/api/v1/certificate/apply", viewerLogin["token"].(string), map[string]any{"id": only["id"], "force": true}, 403)
+	mustPost(t, base, "/api/v1/certificate/download", viewerLogin["token"].(string), map[string]any{"id": only["id"]}, 403)
 
 	otherTenant := auth.Tenant{Name: "其他租户", Code: "other", Status: auth.StatusActive}
 	if err := db.Create(&otherTenant).Error; err != nil {
@@ -415,7 +485,11 @@ func unzipDownload(t *testing.T, body map[string]any) map[string][]byte {
 
 func readCert(t *testing.T, path string) *x509.Certificate {
 	t.Helper()
-	raw := readFile(t, path)
+	return readCertPEM(t, readFile(t, path))
+}
+
+func readCertPEM(t *testing.T, raw string) *x509.Certificate {
+	t.Helper()
 	block, _ := pem.Decode([]byte(raw))
 	if block == nil {
 		t.Fatalf("证书 PEM 无效: %s", raw)

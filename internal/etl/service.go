@@ -208,13 +208,40 @@ func (s *ETLService) Issue(ctx context.Context, tenantID, userID uint, req Certi
 	if err != nil {
 		return nil, err
 	}
-	return s.Execute(ctx, tenantID, userID, JobExecuteRequest{ID: job.ID, Force: req.Force}, task.TriggerManual, false)
+	deploy := true
+	return s.Execute(ctx, tenantID, userID, JobExecuteRequest{ID: job.ID, Force: req.Force, Deploy: &deploy}, task.TriggerManual, false)
+}
+
+func (s *ETLService) Apply(ctx context.Context, tenantID, userID uint, req CertificateIssueRequest) (*task.View, error) {
+	job, err := s.repo.JobByCertificate(ctx, tenantID, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	deploy := false
+	return s.Execute(ctx, tenantID, userID, JobExecuteRequest{ID: job.ID, Force: req.Force, Deploy: &deploy}, task.TriggerManual, false)
+}
+
+func (s *ETLService) Download(ctx context.Context, tenantID, id uint) (*CertificateMaterial, error) {
+	item, err := s.repo.GetCertificate(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(item.CertPEM) == "" || strings.TrimSpace(item.KeyPEM) == "" {
+		return nil, apperror.New(400, "还没有可下载的证书，请先申请")
+	}
+	return &CertificateMaterial{
+		ID: item.ID, Name: item.Name, Domains: decodeDomains(item.DomainsJSON),
+		CertPEM: item.CertPEM, KeyPEM: item.KeyPEM, IssuerPEM: item.IssuerPEM, Fingerprint: item.Fingerprint,
+	}, nil
 }
 
 func (s *ETLService) DeployExisting(ctx context.Context, tenantID, userID, id uint) (*task.View, error) {
 	cert, err := s.repo.GetCertificate(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
+	}
+	if cert.NginxDataSourceID == 0 {
+		return nil, apperror.New(400, "这张证书没有绑定 Nginx，无法部署")
 	}
 	nginx, err := s.sources.Get(ctx, tenantID, cert.NginxDataSourceID)
 	if err != nil {
@@ -235,15 +262,29 @@ func (s *ETLService) DeployExisting(ctx context.Context, tenantID, userID, id ui
 	if running {
 		return nil, apperror.New(409, "证书有正在执行的任务")
 	}
+	hasMaterial := strings.TrimSpace(cert.CertPEM) != "" && strings.TrimSpace(cert.KeyPEM) != ""
+	if !hasMaterial {
+		crt, key, _ := artifactPaths(cfg.CertDir, id)
+		if err := filesExist(crt, key); err != nil {
+			return nil, apperror.New(400, "还没有可部署的证书，请先申请")
+		}
+	}
 	now := time.Now()
 	item := &task.Task{
 		TenantID: tenantID, UserID: userID, ETLJobID: job.ID, CertificateID: id,
-		Trigger: task.TriggerManual, Status: task.StatusRunning, Stage: "load", Force: true, StartedAt: &now,
+		Trigger: task.TriggerManual, Status: task.StatusRunning, Stage: "load", Force: true, Deploy: true, StartedAt: &now,
 	}
 	if err := s.tasks.Create(ctx, item); err != nil {
 		return nil, err
 	}
-	result, err := s.deployer.Deploy(ctx, DeployRequest{Nginx: cfg, CertificateID: id, Domains: decodeDomains(cert.DomainsJSON), RestartOnly: true})
+	deployReq := DeployRequest{Nginx: cfg, CertificateID: id, Domains: decodeDomains(cert.DomainsJSON), RestartOnly: true}
+	if hasMaterial {
+		deployReq.RestartOnly = false
+		deployReq.CertPEM = cert.CertPEM
+		deployReq.KeyPEM = cert.KeyPEM
+		deployReq.IssuerPEM = cert.IssuerPEM
+	}
+	result, err := s.deployer.Deploy(ctx, deployReq)
 	finished := time.Now()
 	item.FinishedAt = &finished
 	if err != nil {
@@ -335,7 +376,12 @@ func (s *ETLService) Execute(ctx context.Context, tenantID, userID uint, req Job
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.repo.GetCertificate(ctx, tenantID, job.CertificateID); err != nil {
+	cert, err := s.repo.GetCertificate(ctx, tenantID, job.CertificateID)
+	if err != nil {
+		return nil, err
+	}
+	deploy, err := resolveDeploy(cert, req.Deploy)
+	if err != nil {
 		return nil, err
 	}
 	running, err := s.tasks.HasRunning(ctx, tenantID, job.CertificateID)
@@ -350,7 +396,7 @@ func (s *ETLService) Execute(ctx context.Context, tenantID, userID uint, req Job
 	}
 	item := &task.Task{
 		TenantID: tenantID, UserID: userID, ETLJobID: job.ID, CertificateID: job.CertificateID,
-		Trigger: trigger, Status: task.StatusPending, Stage: "extract", Force: req.Force,
+		Trigger: trigger, Status: task.StatusPending, Stage: "extract", Force: req.Force, Deploy: deploy,
 	}
 	if err := s.tasks.Create(ctx, item); err != nil {
 		return nil, err
@@ -441,7 +487,7 @@ func (s *ETLService) finish(taskID uint) {
 		return
 	}
 	data := &ETLContext{
-		Pipeline:      PipelineContext{Name: PipelineIssue, Force: item.Force, Trigger: item.Trigger},
+		Pipeline:      PipelineContext{Name: PipelineIssue, Force: item.Force, Trigger: item.Trigger, Deploy: item.Deploy},
 		Task:          TaskState{TaskID: item.ID, Status: task.StatusRunning},
 		Tenant:        TenantContext{TenantID: item.TenantID, UserID: item.UserID},
 		CertificateID: item.CertificateID,
@@ -485,7 +531,6 @@ func (s *ETLService) markSuccess(ctx context.Context, taskID uint, data *ETLCont
 		}
 		item.Status = task.StatusSkipped
 	} else {
-		cert.Status = StatusDeployed
 		cert.CertPEM = data.Target.CertPEM
 		cert.KeyPEM = data.Target.KeyPEM
 		cert.IssuerPEM = data.Target.IssuerPEM
@@ -494,7 +539,12 @@ func (s *ETLService) markSuccess(ctx context.Context, taskID uint, data *ETLCont
 		cert.Fingerprint = data.Target.Fingerprint
 		cert.LastError = ""
 		cert.LastIssuedAt = &now
-		cert.LastDeployedAt = &now
+		if data.Result.Deployed {
+			cert.Status = StatusDeployed
+			cert.LastDeployedAt = &now
+		} else {
+			cert.Status = StatusIssued
+		}
 		item.Status = task.StatusSuccess
 		body.NotAfter = cert.NotAfter
 	}
@@ -579,12 +629,21 @@ func (s *ETLService) prepareCertificate(ctx context.Context, tenantID uint, name
 	if err != nil {
 		return nil, err
 	}
-	nginx, err := s.sources.Get(ctx, tenantID, nginxID)
-	if err != nil {
-		return nil, err
+	if acme.Type != datasource.TypeACME {
+		return nil, apperror.New(400, "请选择 ACME 数据源")
 	}
-	if acme.Type != datasource.TypeACME || nginx.Type != datasource.TypeNginx {
-		return nil, apperror.New(400, "请分别选择 ACME 数据源和 Nginx 数据源")
+	var nginx *datasource.DataSource
+	if nginxID != 0 {
+		nginx, err = s.sources.Get(ctx, tenantID, nginxID)
+		if err != nil {
+			return nil, err
+		}
+		if nginx.Type != datasource.TypeNginx {
+			return nil, apperror.New(400, "请选择 Nginx 数据源")
+		}
+	}
+	if challenge == ChallengeHTTP01 && nginx == nil {
+		return nil, apperror.New(400, "HTTP-01 需要 Nginx 数据源提供验证目录。只申请证书时请使用 DNS-01，并可以不选 Nginx")
 	}
 	acmeCfg, err := datasource.ParseACME(acme.ConfigJSON)
 	if err != nil {
@@ -597,11 +656,25 @@ func (s *ETLService) prepareCertificate(ctx context.Context, tenantID uint, name
 	if err != nil {
 		return nil, err
 	}
+	var boundNginx uint
+	if nginx != nil {
+		boundNginx = nginx.ID
+	}
 	return &Certificate{
 		TenantID: tenantID, Name: name, DomainsJSON: rawDomains, Email: email,
 		ChallengeType: challenge, KeyType: keyType, ACMEDataSourceID: acme.ID,
-		NginxDataSourceID: nginx.ID, RenewBeforeDays: renewDays, AutoRenew: autoRenew, AgreeTOS: true,
+		NginxDataSourceID: boundNginx, RenewBeforeDays: renewDays, AutoRenew: autoRenew, AgreeTOS: true,
 	}, nil
+}
+
+func resolveDeploy(cert *Certificate, requested *bool) (bool, error) {
+	if requested == nil {
+		return cert.NginxDataSourceID != 0, nil
+	}
+	if *requested && cert.NginxDataSourceID == 0 {
+		return false, apperror.New(400, "部署需要 Nginx 数据源。可以不部署，单独申请证书")
+	}
+	return *requested, nil
 }
 
 func (s *ETLService) view(ctx context.Context, item *Certificate, jobID uint) (*CertificateView, error) {
