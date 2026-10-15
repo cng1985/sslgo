@@ -1,7 +1,7 @@
 GO ?= go
 BIN ?= bin/sslplatform
 
-.PHONY: web test build run
+.PHONY: web test build run install
 
 web:
 	cd web && npm install && npm run build
@@ -14,3 +14,6 @@ build: web
 
 run: build
 	./$(BIN)
+
+install:
+	./scripts/install-linux.sh

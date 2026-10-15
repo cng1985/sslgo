@@ -6,6 +6,8 @@
 
 ```text
 cmd/server/main.go          只负责启动
+scripts/install-linux.sh    Linux systemd 服务安装
+scripts/build-platforms.ps1 Windows 上生成各平台应用
 internal/app                Fx 根模块
 internal/config             配置加载
 internal/database           SQLite 迁移与初始化
@@ -143,6 +145,53 @@ docker compose up --build
 - 动作 `restart`
 
 把域名解析到这台机器，在页面上选择生产 ACME 目录并签发。部署只覆盖该目录中的 `域名.pem` 与 `域名.key`，例如 `nbsaas.com.pem` 和 `nbsaas.com.key`，然后重启 Nginx。Nginx 配置需要事先写好这两个文件的路径，平台不会改配置。
+
+## Linux 服务
+
+在目标机器上用 root 安装 systemd 服务。服务以 root 运行，这样部署证书时可以写入 Nginx 目录并执行 `nginx` / `systemctl`。
+
+```sh
+sudo ./scripts/install-linux.sh --build
+```
+
+已经有二进制时：
+
+```sh
+sudo ./scripts/install-linux.sh --bin ./dist/sslplatform-linux-amd64
+```
+
+脚本会安装 `/usr/local/bin/sslplatform`，写入 `/etc/sslplatform/config.yaml` 和权限为 `0600` 的 `/etc/sslplatform/sslplatform.env`，数据放在 `/var/lib/sslplatform`。首次安装会生成管理员密码，写在 `/etc/sslplatform/initial-admin.txt`。再次执行会替换程序并重启，已有配置、密钥和管理员密码保持不变。`--addr` 只在首次安装时生效。
+
+同时准备 HTTP-01 目录 `/var/www/acme` 和证书目录 `/usr/local/nginx/conf/certs`。控制台默认是 `http://127.0.0.1:8080`。日志用 `journalctl -u sslplatform -f`。
+
+```sh
+./scripts/install-linux.sh status
+sudo ./scripts/install-linux.sh uninstall
+sudo ./scripts/install-linux.sh uninstall --purge
+```
+
+`uninstall` 保留配置和数据库。`--purge` 会删除这两项目录。
+
+## 各平台应用
+
+在 Windows 上生成 Linux、Windows 和 macOS 的可执行文件与压缩包：
+
+```bat
+scripts\build-platforms.cmd
+scripts\build-platforms.cmd -Version 1.2.0 -Platform linux/amd64,windows/amd64
+scripts\build-platforms.cmd -SkipWeb
+```
+
+默认目标是 `linux/amd64`、`linux/arm64`、`linux/arm/7`、`windows/amd64`、`windows/arm64`、`darwin/amd64`、`darwin/arm64`。产物在 `dist/`：
+
+| 文件 | 内容 |
+| --- | --- |
+| `sslplatform-linux-amd64` | 裸二进制，可直接交给安装脚本的 `--bin` |
+| `sslplatform-linux-armv7` | 32 位 ARM，`GOARM=7` |
+| `sslplatform-<系统>-<架构>.zip` | 程序、`configs/config.yaml` 和启动脚本 |
+| `SHA256SUMS.txt` | 上述文件的 SHA-256 |
+
+压缩包在对应目录下执行 `sslplatform`、`sslplatform.exe` 或 `start.sh` / `start.cmd`。版本号写入 `internal/appinfo.Version`。需要 Go 1.24 和 Node.js；前端已经构建过时可以用 `-SkipWeb`。
 
 ## 测试
 
