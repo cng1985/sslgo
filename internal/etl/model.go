@@ -111,19 +111,22 @@ type CertificateIssueRequest struct {
 	Force bool `json:"force"`
 }
 
-// CertificateMaterial 是用户主动下载时才返回的证书和私钥。
-type CertificateMaterial struct {
-	ID          uint     `json:"id"`
-	Name        string   `json:"name"`
-	Domains     []string `json:"domains"`
-	CertPEM     string   `json:"certPem"`
-	KeyPEM      string   `json:"keyPem"`
-	IssuerPEM   string   `json:"issuerPem"`
-	Fingerprint string   `json:"fingerprint"`
-}
-
 type CertificateDeployRequest struct {
 	ID uint `json:"id"`
+}
+
+type CertificateDownloadRequest struct {
+	ID       uint   `json:"id"`
+	Format   string `json:"format"`
+	Password string `json:"password"`
+}
+
+type CertificateDownload struct {
+	Filename      string     `json:"filename"`
+	ContentType   string     `json:"contentType"`
+	ContentBase64 string     `json:"contentBase64"`
+	Format        string     `json:"format"`
+	NotAfter      *time.Time `json:"notAfter,omitempty"`
 }
 
 type JobCreateRequest struct {
@@ -173,6 +176,7 @@ type CertificateView struct {
 	NotBefore         *time.Time `json:"notBefore,omitempty"`
 	NotAfter          *time.Time `json:"notAfter,omitempty"`
 	Fingerprint       string     `json:"fingerprint"`
+	DaysRemaining     *int       `json:"daysRemaining,omitempty"`
 	LastError         string     `json:"lastError"`
 	LastIssuedAt      *time.Time `json:"lastIssuedAt,omitempty"`
 	LastDeployedAt    *time.Time `json:"lastDeployedAt,omitempty"`

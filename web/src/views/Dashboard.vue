@@ -19,8 +19,11 @@
         <el-table-column label="域名">
           <template #default="{ row }"><span class="mono">{{ (row.domains || []).join(', ') }}</span></template>
         </el-table-column>
-        <el-table-column label="到期" width="180">
-          <template #default="{ row }">{{ fmt(row.notAfter) }}</template>
+        <el-table-column label="到期" width="220">
+          <template #default="{ row }">
+            <div>{{ fmt(row.notAfter) }}</div>
+            <div v-if="row.notAfter" class="expire warn">{{ remainText(row.daysRemaining, row.notAfter) }}</div>
+          </template>
         </el-table-column>
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag></template>
@@ -33,7 +36,7 @@
 <script setup>
 import { onMounted, reactive } from 'vue'
 import http from '../api/http'
-import { fmt, statusText, statusType } from '../utils'
+import { fmt, remainText, statusText, statusType } from '../utils'
 
 const summary = reactive({ certificateTotal: 0, deployed: 0, failed: 0, expiringSoon: 0, runningTasks: 0, expiring: [] })
 

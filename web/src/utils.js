@@ -6,6 +6,21 @@ export function fmt(value) {
   return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}`
 }
 
+export function remainText(days, notAfter) {
+  let value = days
+  if (value === undefined || value === null || value === '') {
+    if (!notAfter) return ''
+    const ms = new Date(notAfter).getTime() - Date.now()
+    if (Number.isNaN(ms)) return ''
+    value = ms >= 0 ? Math.floor(ms / 86400000) : -Math.ceil(-ms / 86400000)
+  }
+  value = Number(value)
+  if (Number.isNaN(value)) return ''
+  if (value < 0) return `已过期 ${-value} 天`
+  if (value === 0) return '不足 1 天'
+  return `剩余 ${value} 天`
+}
+
 export function statusType(status) {
   const map = {
     deployed: 'success',
@@ -22,6 +37,26 @@ export function statusType(status) {
     disabled: 'info'
   }
   return map[status] || 'info'
+}
+
+export function certificateFileBase(domains, fallback = 'certificate') {
+  const list = Array.isArray(domains) ? domains : []
+  const raw = list.map((item) => String(item || '').trim()).find(Boolean) || ''
+  const base = raw.replace(/^\*\./, '').toLowerCase()
+  const safe = base.replace(/[^a-z0-9._-]+/g, '_')
+  return safe || fallback
+}
+
+export function certificateFiles(material) {
+  const cert = String(material?.certPem || '').trim()
+  const issuer = String(material?.issuerPem || '').trim()
+  const key = String(material?.keyPem || '').trim()
+  let pem = cert
+  if (issuer && !cert.includes(issuer)) pem = `${cert}\n${issuer}`
+  return {
+    pem: pem ? `${pem}\n` : '',
+    key: key ? `${key}\n` : ''
+  }
 }
 
 export function statusText(status) {
