@@ -84,10 +84,13 @@ func buildBundle(in bundleInput) (*bundleFile, error) {
 	var files []zipEntry
 	switch format {
 	case FormatNginx:
+		stem := nginxFileStem(in.Domains)
+		certName := stem + ".pem"
+		keyName := stem + ".key"
 		files = []zipEntry{
-			{name: "fullchain.pem", body: []byte(encodeCerts(append([]*x509.Certificate{leaf}, chain...)))},
-			{name: "privkey.pem", body: []byte(normalizePEM(in.KeyPEM))},
-			{name: "nginx.conf", body: []byte(nginxBundleConf(names, expiry))},
+			{name: certName, body: []byte(encodeCerts(append([]*x509.Certificate{leaf}, chain...)))},
+			{name: keyName, body: []byte(normalizePEM(in.KeyPEM))},
+			{name: "nginx.conf", body: []byte(nginxBundleConf(names, expiry, certName, keyName))},
 		}
 	case FormatHTTPD:
 		files = []zipEntry{
@@ -314,13 +317,38 @@ func formatExpiry(t time.Time) string {
 	return t.UTC().Format("2006-01-02 15:04:05 UTC")
 }
 
-func nginxBundleConf(domains, expiry string) string {
+// nginxFileStem 用主域名做 Nginx 包内文件名。*.nbssas.com 去掉 *. 后是 nbssas.com。
+func nginxFileStem(domains []string) string {
+	raw := ""
+	for _, domain := range domains {
+		domain = strings.ToLower(strings.TrimSpace(domain))
+		if domain != "" {
+			raw = domain
+			break
+		}
+	}
+	raw = strings.TrimPrefix(raw, "*.")
+	var b strings.Builder
+	for _, r := range raw {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '.', r == '-':
+			b.WriteRune(r)
+		}
+	}
+	out := strings.Trim(b.String(), ".-")
+	if out == "" {
+		return "certificate"
+	}
+	return out
+}
+
+func nginxBundleConf(domains, expiry, certName, keyName string) string {
 	return fmt.Sprintf(`# Nginx
 # 域名：%s
 # 到期时间：%s
-ssl_certificate     fullchain.pem;
-ssl_certificate_key privkey.pem;
-`, domains, expiry)
+ssl_certificate     %s;
+ssl_certificate_key %s;
+`, domains, expiry, certName, keyName)
 }
 
 func httpdBundleConf(domains, expiry string, hasChain bool) string {

@@ -154,7 +154,7 @@ func TestPlatformFlow(t *testing.T) {
 	nginxFiles := unzipDownload(t, decodeData(t, mustPost(t, base, "/api/v1/certificate/download", token, map[string]any{
 		"id": cert["id"], "format": "nginx",
 	}, 200)))
-	if !bytes.Contains(nginxFiles["fullchain.pem"], []byte("BEGIN CERTIFICATE")) || !bytes.Contains(nginxFiles["privkey.pem"], []byte("PRIVATE KEY")) {
+	if !bytes.Contains(nginxFiles["example.com.pem"], []byte("BEGIN CERTIFICATE")) || !bytes.Contains(nginxFiles["example.com.key"], []byte("PRIVATE KEY")) {
 		t.Fatal("Nginx 下载包不完整")
 	}
 	httpdFiles := unzipDownload(t, decodeData(t, mustPost(t, base, "/api/v1/certificate/download", token, map[string]any{
@@ -284,10 +284,10 @@ func TestPlatformFlow(t *testing.T) {
 	onlyFiles := unzipDownload(t, decodeData(t, mustPost(t, base, "/api/v1/certificate/download", token, map[string]any{
 		"id": only["id"], "format": "nginx",
 	}, 200)))
-	if !bytes.Contains(onlyFiles["fullchain.pem"], []byte("CERTIFICATE")) || !bytes.Contains(onlyFiles["privkey.pem"], []byte("PRIVATE KEY")) {
+	if !bytes.Contains(onlyFiles["only.example.com.pem"], []byte("CERTIFICATE")) || !bytes.Contains(onlyFiles["only.example.com.key"], []byte("PRIVATE KEY")) {
 		t.Fatal("下载结果缺少证书或私钥")
 	}
-	if leaf := readCertPEM(t, string(onlyFiles["fullchain.pem"])); len(leaf.DNSNames) != 1 || leaf.DNSNames[0] != "only.example.com" {
+	if leaf := readCertPEM(t, string(onlyFiles["only.example.com.pem"])); len(leaf.DNSNames) != 1 || leaf.DNSNames[0] != "only.example.com" {
 		t.Fatalf("下载的证书域名=%v", leaf.DNSNames)
 	}
 	bound := decodeData(t, mustPost(t, base, "/api/v1/certificate/update", token, map[string]any{
