@@ -9,7 +9,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const defaultJWTSecret = "change-me-please-32chars!!"
+const (
+	defaultJWTSecret     = "change-me-please-32chars!!"
+	defaultAdminPassword = "Admin@123456"
+)
 
 type fileConfig struct {
 	Server struct {
@@ -63,7 +66,7 @@ func defaults() Config {
 		},
 		Seed: Seed{
 			AdminUser:     "admin",
-			AdminPassword: "Admin@123456",
+			AdminPassword: defaultAdminPassword,
 			ACMEEmail:     "admin@example.com",
 		},
 	}

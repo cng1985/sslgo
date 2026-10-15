@@ -16,8 +16,11 @@ import (
 	"sslplatform/internal/task"
 )
 
+// Ready 表示表结构已经迁移完成。启动日志依赖它，保证迁移行先打出来。
+type Ready struct{}
+
 // MigrateAndSeed 创建表结构、权限点和首个管理员。
-func MigrateAndSeed(db *gorm.DB, cfg *config.Config) error {
+func MigrateAndSeed(db *gorm.DB, cfg *config.Config) (Ready, error) {
 	if err := db.AutoMigrate(
 		&auth.Tenant{},
 		&auth.User{},
@@ -31,29 +34,27 @@ func MigrateAndSeed(db *gorm.DB, cfg *config.Config) error {
 		&task.Task{},
 		&scheduler.Schedule{},
 	); err != nil {
-		return err
+		return Ready{}, err
 	}
+	slog.Info("数据库迁移完成")
 	if err := ensurePermissions(db); err != nil {
-		return err
+		return Ready{}, err
 	}
 	var users int64
 	if err := db.Model(&auth.User{}).Count(&users).Error; err != nil {
-		return err
+		return Ready{}, err
 	}
 	if users == 0 {
 		if err := seedAdmin(db, cfg); err != nil {
-			return err
+			return Ready{}, err
 		}
 	}
 	if cfg.Seed.BootstrapNginx {
 		if err := bootstrapNginx(db, cfg); err != nil {
-			return err
+			return Ready{}, err
 		}
 	}
-	if cfg.UsingDefaultSecret() {
-		slog.Warn("正在使用默认 JWT 密钥，请设置 SSL_JWT_SECRET")
-	}
-	return nil
+	return Ready{}, nil
 }
 
 func ensurePermissions(db *gorm.DB) error {

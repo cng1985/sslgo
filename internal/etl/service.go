@@ -358,7 +358,7 @@ func (s *ETLService) Summary(ctx context.Context, tenantID uint) (*Summary, erro
 func (s *ETLService) finish(taskID uint) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			slog.Error("etl panic", "task", taskID, "panic", rec)
+			slog.Error("证书流水线异常", "task", taskID, "panic", rec)
 			s.markFailed(taskID, fmt.Sprintf("内部错误: %v", rec))
 		}
 	}()
@@ -366,13 +366,13 @@ func (s *ETLService) finish(taskID uint) {
 	defer cancel()
 	item, err := s.tasks.GetByID(ctx, taskID)
 	if err != nil {
-		slog.Error("load task", "err", err)
+		slog.Error("读取任务失败", "err", err)
 		return
 	}
 	unlock := s.locks.lock(item.CertificateID)
 	defer unlock()
 	if err := s.tasks.MarkRunning(ctx, item.ID, "extract"); err != nil {
-		slog.Error("mark running", "err", err)
+		slog.Error("标记任务运行失败", "err", err)
 		return
 	}
 	data := &ETLContext{
@@ -389,7 +389,7 @@ func (s *ETLService) finish(taskID uint) {
 		return
 	}
 	if err := s.markSuccess(ctx, item.ID, data); err != nil {
-		slog.Error("save etl result", "err", err)
+		slog.Error("保存签发结果失败", "err", err)
 		s.markFailed(item.ID, err.Error())
 	}
 }

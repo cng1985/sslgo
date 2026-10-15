@@ -15,6 +15,7 @@ import (
 	"sslplatform/internal/common/response"
 	"sslplatform/internal/config"
 	"sslplatform/internal/httpapi"
+	"sslplatform/internal/logging"
 )
 
 func NewHTTPServer(lc fx.Lifecycle, cfg *config.Config, engine *gin.Engine, ep *Endpoint) *http.Server {
@@ -33,7 +34,7 @@ func NewHTTPServer(lc fx.Lifecycle, cfg *config.Config, engine *gin.Engine, ep *
 				return err
 			}
 			ep.Set(ln.Addr().String())
-			slog.Info("ssl platform listening", "addr", ln.Addr().String(), "version", appinfo.Version)
+			slog.Info("HTTP 服务已启动", "addr", logging.FormatAddr(ln.Addr().String()))
 			go func() {
 				if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					slog.Error("http server", "err", err)

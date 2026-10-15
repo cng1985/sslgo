@@ -2,7 +2,6 @@ package database
 
 import (
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -23,7 +22,7 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 	}
 	dsn := "file:" + path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: logger.New(log.New(os.Stdout, "", log.LstdFlags), logger.Config{
+		Logger: logger.New(slog.NewLogLogger(slog.Default().Handler(), slog.LevelWarn), logger.Config{
 			SlowThreshold:             time.Second,
 			LogLevel:                  logger.Warn,
 			IgnoreRecordNotFoundError: true,

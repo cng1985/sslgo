@@ -42,6 +42,7 @@ func NewService(lc fx.Lifecycle, repo *Repository, pipelines *etl.ETLService) *S
 			}
 			svc.cron.Start()
 			go svc.loop()
+			slog.Info("调度器已启动")
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {

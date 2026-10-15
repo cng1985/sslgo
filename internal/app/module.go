@@ -28,4 +28,5 @@ var Module = fx.Module(
 	common.Module,
 	web.Module,
 	server.Module,
+	fx.Invoke(announce),
 )
