@@ -27,6 +27,7 @@ type Task struct {
 	Status        string     `gorm:"size:32;not null;index" json:"status"`
 	Stage         string     `gorm:"size:32" json:"stage"`
 	Force         bool       `json:"force"`
+	Deploy        bool       `json:"deploy"`
 	ResultJSON    string     `gorm:"type:text" json:"-"`
 	Error         string     `gorm:"type:text" json:"error"`
 	StartedAt     *time.Time `json:"startedAt,omitempty"`
@@ -60,6 +61,7 @@ type View struct {
 	Status        string         `json:"status"`
 	Stage         string         `json:"stage"`
 	Force         bool           `json:"force"`
+	Deploy        bool           `json:"deploy"`
 	Error         string         `json:"error"`
 	Result        map[string]any `json:"result"`
 	StartedAt     *time.Time     `json:"startedAt,omitempty"`

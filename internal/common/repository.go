@@ -222,7 +222,7 @@ func registry() map[string]modelSpec {
 		},
 		"task": {
 			Table:   "tasks",
-			Columns: []string{"id", "tenant_id", "user_id", "etl_job_id", "certificate_id", "trigger", "status", "stage", "force", "error", "started_at", "finished_at", "created_at", "updated_at"},
+			Columns: []string{"id", "tenant_id", "user_id", "etl_job_id", "certificate_id", "trigger", "status", "stage", "force", "deploy", "error", "started_at", "finished_at", "created_at", "updated_at"},
 			Filters: map[string]string{"id": "id", "status": "status", "certificateId": "certificate_id", "etlJobId": "etl_job_id", "trigger": "trigger"},
 			Search:  []string{"status", "error", "stage"},
 		},
