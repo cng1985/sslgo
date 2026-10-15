@@ -33,17 +33,17 @@ func TestBuildBundleFormats(t *testing.T) {
 		t.Fatalf("filename=%s", nginx.Name)
 	}
 	files := unzipBundle(t, nginx.Body)
-	full := certsInPEM(t, string(files["fullchain.pem"]))
+	full := certsInPEM(t, string(files["example.com.pem"]))
 	if len(full) != 2 {
 		t.Fatalf("fullchain certs=%d", len(full))
 	}
-	if !bytes.Contains(files["nginx.conf"], []byte("ssl_certificate     fullchain.pem;")) {
+	if !bytes.Contains(files["nginx.conf"], []byte("ssl_certificate     example.com.pem;")) || !bytes.Contains(files["nginx.conf"], []byte("ssl_certificate_key example.com.key;")) {
 		t.Fatalf("nginx.conf=%s", files["nginx.conf"])
 	}
 	if !bytes.Contains(files["nginx.conf"], []byte(formatExpiry(expiry))) {
 		t.Fatalf("缺少到期时间: %s", files["nginx.conf"])
 	}
-	key, err := parsePrivateKey(string(files["privkey.pem"]))
+	key, err := parsePrivateKey(string(files["example.com.key"]))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,6 +94,44 @@ func TestBuildBundleFormats(t *testing.T) {
 	if !bytes.Contains(iisFiles["iis.txt"], []byte("服务器证书")) {
 		t.Fatalf("iis.txt=%s", iisFiles["iis.txt"])
 	}
+}
+
+func TestNginxBundleNamesWildcardDomain(t *testing.T) {
+	certPEM, keyPEM, err := MintSelfSigned([]string{"*.nbssas.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := buildBundle(bundleInput{
+		Format: FormatNginx, Name: "通配符", Domains: []string{"*.nbssas.com"},
+		CertPEM: certPEM, KeyPEM: keyPEM, IssuerPEM: certPEM,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := unzipBundle(t, file.Body)
+	if _, ok := files["nbssas.com.pem"]; !ok {
+		t.Fatalf("缺少 nbssas.com.pem: %v", mapsKeys(files))
+	}
+	if _, ok := files["nbssas.com.key"]; !ok {
+		t.Fatalf("缺少 nbssas.com.key: %v", mapsKeys(files))
+	}
+	if _, ok := files["fullchain.pem"]; ok {
+		t.Fatal("不应再使用 fullchain.pem")
+	}
+	if !bytes.Contains(files["nginx.conf"], []byte("ssl_certificate     nbssas.com.pem;")) || !bytes.Contains(files["nginx.conf"], []byte("ssl_certificate_key nbssas.com.key;")) {
+		t.Fatalf("nginx.conf=%s", files["nginx.conf"])
+	}
+	if !bytes.Contains(files["nbssas.com.key"], []byte("PRIVATE KEY")) {
+		t.Fatal("私钥内容无效")
+	}
+}
+
+func mapsKeys(files map[string][]byte) []string {
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	return names
 }
 
 func TestSelfSignedBundleOmitsDuplicateChain(t *testing.T) {

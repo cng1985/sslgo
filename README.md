@@ -72,7 +72,7 @@ HTTP-01 在签发前必须能通过 80 端口提供 `webroot/.well-known/acme-ch
 
 | format | 内容 |
 | --- | --- |
-| `nginx` | `fullchain.pem`、`privkey.pem`、`nginx.conf` |
+| `nginx` | `域名.pem`、`域名.key`、`nginx.conf`。`*.nbssas.com` 写成 `nbssas.com.pem` 和 `nbssas.com.key` |
 | `httpd` | `server.crt`、`server.key`、`chain.crt`、`httpd.conf`。没有中间证书时省略证书链 |
 | `iis` | `certificate.pfx`、`iis.txt`。请求体要带 8 到 64 位 `password`，PFX 使用 IIS 可导入的传统 PKCS#12 |
 

@@ -74,7 +74,7 @@ func RegisterRouter(r httpapi.Router, c *Controller) {
 	}, c.DetailCertificate)
 	r.Protected(httpapi.Meta{
 		Resource: "certificate", Action: "download", Path: "/certificate/download",
-		Summary: "下载已签发证书。nginx 为 fullchain 与私钥，httpd 为证书、私钥和证书链，iis 为带密码的 PFX",
+		Summary: "下载已签发证书。nginx 包内是域名.pem 与域名.key，通配符去掉 *.；httpd 为证书、私钥和证书链，iis 为带密码的 PFX",
 		Fields: []httpapi.Field{
 			{Name: "id", Type: "number", Required: true, Description: "证书 ID"},
 			{Name: "format", Type: "string", Required: true, Description: "nginx、httpd 或 iis。apache 等同于 httpd"},

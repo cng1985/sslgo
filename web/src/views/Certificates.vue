@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h1>证书</h1>
-        <p>可以只向 ACME 申请，也可以申请后立刻部署到 Nginx。下载的 zip 里是域名.pem 和域名.key，通配符 *.nbssas.com 会去掉 *.</p>
+        <p>可以只向 ACME 申请，也可以申请后立刻部署到 Nginx。Nginx 压缩包里是域名.pem 和域名.key，通配符 *.nbssas.com 会写成 nbssas.com.pem 与 nbssas.com.key。</p>
       </div>
       <el-button v-if="auth.can('certificate:create')" type="primary" @click="openCreate">新建证书</el-button>
     </div>
@@ -38,7 +38,7 @@
               <el-button link type="primary">下载</el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="nginx">Nginx（fullchain + key）</el-dropdown-item>
+                  <el-dropdown-item command="nginx">Nginx（域名.pem + 域名.key）</el-dropdown-item>
                   <el-dropdown-item command="httpd">httpd（crt + key + chain）</el-dropdown-item>
                   <el-dropdown-item command="iis">IIS（PFX）</el-dropdown-item>
                 </el-dropdown-menu>
@@ -98,7 +98,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '../api/http'
 import { useAuthStore } from '../stores/auth'
-import { buildCertificateZip, fmt, statusText, statusType } from '../utils'
+import { fmt, remainText, statusText, statusType } from '../utils'
 
 const auth = useAuthStore()
 const rows = ref([])
@@ -255,34 +255,6 @@ async function deploy(row) {
   const body = await http.post('/certificate/deploy', { id: row.id })
   ElMessage.success(body.data.result?.message || '已执行')
   load()
-}
-
-async function download(row) {
-  const body = await http.post('/certificate/download', { id: row.id })
-  const material = body.data || {}
-  const bundle = buildCertificateZip({
-    domains: material.domains?.length ? material.domains : row.domains,
-    certPem: material.certPem,
-    keyPem: material.keyPem,
-    issuerPem: material.issuerPem
-  })
-  const blob = new Blob([bundle.bytes], { type: 'application/zip' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = bundle.filename
-  link.click()
-  link.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1500)
-}
-
-async function download(row) {
-  const body = await http.post('/certificate/download', { id: row.id })
-  const base = certificateFileBase(row.domains)
-  const files = certificateFiles(body.data)
-  saveTextFile(`${base}.pem`, files.pem)
-  saveTextFile(`${base}.key`, files.key)
-  ElMessage.success(`已下载 ${base}.pem 和 ${base}.key`)
 }
 
 async function remove(row) {
