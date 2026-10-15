@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -56,7 +57,7 @@ func NewEngine(cfg *config.Config) *gin.Engine {
 	}
 	engine := gin.New()
 	_ = engine.SetTrustedProxies([]string{"127.0.0.1", "::1"})
-	engine.Use(gin.Recovery(), guardMethod(), rejectClientTenant())
+	engine.Use(recovery(), guardMethod(), rejectClientTenant())
 	return engine
 }
 
@@ -114,6 +115,13 @@ func (r *Registrar) mount(authMode string, meta httpapi.Meta, handlers ...gin.Ha
 	r.routes = append(r.routes, info)
 	r.mu.Unlock()
 	r.v1.POST(path, handlers...)
+}
+
+func recovery() gin.HandlerFunc {
+	return gin.CustomRecoveryWithWriter(io.Discard, func(c *gin.Context, rec any) {
+		slog.Error("请求处理异常", "panic", rec, "path", c.Request.URL.Path)
+		response.Fail(c, http.StatusInternalServerError, "内部错误")
+	})
 }
 
 func guardMethod() gin.HandlerFunc {

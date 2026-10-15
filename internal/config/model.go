@@ -40,3 +40,7 @@ type Seed struct {
 func (c Config) UsingDefaultSecret() bool {
 	return c.Auth.JWTSecret == defaultJWTSecret
 }
+
+func (c Config) UsingDefaultPassword() bool {
+	return c.Seed.AdminPassword == defaultAdminPassword
+}

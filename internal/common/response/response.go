@@ -71,6 +71,6 @@ func FromError(c *gin.Context, err error) {
 		Fail(c, ae.Code, ae.Msg)
 		return
 	}
-	slog.Error("request failed", "err", err, "path", c.FullPath())
+	slog.Error("请求失败", "err", err, "path", c.FullPath())
 	Fail(c, http.StatusInternalServerError, "内部错误")
 }
