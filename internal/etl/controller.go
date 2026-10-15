@@ -59,7 +59,7 @@ func RegisterRouter(r httpapi.Router, c *Controller) {
 	}, c.DeleteCertificate)
 	r.Protected(httpapi.Meta{
 		Resource: "certificate", Action: "list", Path: "/certificate/list",
-		Summary: "分页查询当前租户证书",
+		Summary: "分页查询当前租户证书，返回到期时间 notAfter 和剩余天数 daysRemaining",
 		Fields: []httpapi.Field{
 			{Name: "page", Type: "number", Required: false, Description: "页码"},
 			{Name: "size", Type: "number", Required: false, Description: "每页条数"},
@@ -69,9 +69,18 @@ func RegisterRouter(r httpapi.Router, c *Controller) {
 	}, c.ListCertificates)
 	r.Protected(httpapi.Meta{
 		Resource: "certificate", Action: "detail", Path: "/certificate/detail",
-		Summary: "查看证书详情、指纹和公钥 PEM",
+		Summary: "查看证书详情、指纹和公钥 PEM，不返回私钥",
 		Fields:  []httpapi.Field{{Name: "id", Type: "number", Required: true, Description: "证书 ID"}},
 	}, c.DetailCertificate)
+	r.Protected(httpapi.Meta{
+		Resource: "certificate", Action: "download", Path: "/certificate/download",
+		Summary: "下载已签发证书。nginx 为 fullchain 与私钥，httpd 为证书、私钥和证书链，iis 为带密码的 PFX",
+		Fields: []httpapi.Field{
+			{Name: "id", Type: "number", Required: true, Description: "证书 ID"},
+			{Name: "format", Type: "string", Required: true, Description: "nginx、httpd 或 iis。apache 等同于 httpd"},
+			{Name: "password", Type: "string", Required: false, Description: "iis 必填，8 到 64 位，作为 PFX 导入密码"},
+		},
+	}, c.Download)
 	r.Protected(httpapi.Meta{
 		Resource: "certificate", Action: "issue", Path: "/certificate/issue",
 		Summary: "执行签发流水线：申请证书、替换旧文件并重启 Nginx",
@@ -203,6 +212,21 @@ func (c *Controller) DetailCertificate(ctx *gin.Context) {
 	}
 	tc, _ := tenant.From(ctx.Request.Context())
 	view, err := c.svc.DetailCertificate(ctx.Request.Context(), tc.TenantID, req.ID)
+	if err != nil {
+		response.FromError(ctx, err)
+		return
+	}
+	response.OK(ctx, view)
+}
+
+func (c *Controller) Download(ctx *gin.Context) {
+	var req CertificateDownloadRequest
+	if err := bind.JSON(ctx, &req); err != nil {
+		response.FromError(ctx, err)
+		return
+	}
+	tc, _ := tenant.From(ctx.Request.Context())
+	view, err := c.svc.Download(ctx.Request.Context(), tc.TenantID, req)
 	if err != nil {
 		response.FromError(ctx, err)
 		return

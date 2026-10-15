@@ -2,6 +2,7 @@ package etl
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -115,6 +116,69 @@ func (s *ETLService) DetailCertificate(ctx context.Context, tenantID, id uint) (
 		return nil, err
 	}
 	return &CertificateDetail{CertificateView: *view, CertPEM: item.CertPEM}, nil
+}
+
+func (s *ETLService) Download(ctx context.Context, tenantID uint, req CertificateDownloadRequest) (*CertificateDownload, error) {
+	format, err := normalizeBundleFormat(req.Format)
+	if err != nil {
+		return nil, err
+	}
+	item, err := s.repo.GetCertificate(ctx, tenantID, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	certPEM, keyPEM, issuerPEM, err := s.certificateMaterial(ctx, item)
+	if err != nil {
+		return nil, err
+	}
+	file, err := buildBundle(bundleInput{
+		Format: format, Name: item.Name, Domains: decodeDomains(item.DomainsJSON),
+		NotAfter: derefTime(item.NotAfter), CertPEM: certPEM, KeyPEM: keyPEM, IssuerPEM: issuerPEM,
+		Password: req.Password,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &CertificateDownload{
+		Filename: file.Name, ContentType: "application/zip",
+		ContentBase64: base64.StdEncoding.EncodeToString(file.Body),
+		Format:        format,
+		NotAfter:      item.NotAfter,
+	}, nil
+}
+
+func (s *ETLService) certificateMaterial(ctx context.Context, item *Certificate) (string, string, string, error) {
+	certPEM, keyPEM, issuerPEM := item.CertPEM, item.KeyPEM, item.IssuerPEM
+	if strings.TrimSpace(certPEM) == "" || strings.TrimSpace(keyPEM) == "" {
+		nginx, err := s.sources.Get(ctx, item.TenantID, item.NginxDataSourceID)
+		if err == nil {
+			if cfg, err := datasource.ParseNginx(nginx.ConfigJSON); err == nil {
+				diskCert, diskKey, diskIssuer, err := readMaterialFiles(cfg.CertDir, item.ID)
+				if err == nil {
+					if strings.TrimSpace(certPEM) == "" {
+						certPEM = diskCert
+					}
+					if strings.TrimSpace(keyPEM) == "" {
+						keyPEM = diskKey
+					}
+					if strings.TrimSpace(issuerPEM) == "" {
+						issuerPEM = diskIssuer
+					}
+				}
+			}
+		}
+	}
+	if strings.TrimSpace(certPEM) == "" || strings.TrimSpace(keyPEM) == "" {
+		return "", "", "", apperror.New(400, "证书尚未签发，无法下载")
+	}
+	return certPEM, keyPEM, issuerPEM, nil
+}
+
+func derefTime(value *time.Time) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return *value
 }
 
 func (s *ETLService) ListCertificates(ctx context.Context, tenantID uint, req CertificateListRequest) ([]CertificateView, int, int, int64, error) {
@@ -423,6 +487,8 @@ func (s *ETLService) markSuccess(ctx context.Context, taskID uint, data *ETLCont
 	} else {
 		cert.Status = StatusDeployed
 		cert.CertPEM = data.Target.CertPEM
+		cert.KeyPEM = data.Target.KeyPEM
+		cert.IssuerPEM = data.Target.IssuerPEM
 		cert.NotBefore = &data.Target.NotBefore
 		cert.NotAfter = &data.Target.NotAfter
 		cert.Fingerprint = data.Target.Fingerprint
@@ -546,6 +612,10 @@ func (s *ETLService) view(ctx context.Context, item *Certificate, jobID uint) (*
 		AgreeTOS: item.AgreeTOS, Status: item.Status, NotBefore: item.NotBefore, NotAfter: item.NotAfter,
 		Fingerprint: item.Fingerprint, LastError: item.LastError, LastIssuedAt: item.LastIssuedAt,
 		LastDeployedAt: item.LastDeployedAt, JobID: jobID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
+	}
+	if item.NotAfter != nil {
+		days := remainingDays(*item.NotAfter, time.Now())
+		view.DaysRemaining = &days
 	}
 	if nginx, err := s.sources.Get(ctx, item.TenantID, item.NginxDataSourceID); err == nil {
 		if cfg, err := datasource.ParseNginx(nginx.ConfigJSON); err == nil && cfg.CertDir != "" {

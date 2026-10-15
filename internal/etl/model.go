@@ -22,7 +22,8 @@ const (
 	JobRunning      = "running"
 )
 
-// Certificate 记录一张 Let's Encrypt 证书的申请和部署状态。私钥只落在 Nginx 证书目录。
+// Certificate 记录一张 Let's Encrypt 证书的申请和部署状态。
+// 私钥写入数据库供下载使用，同时落在 Nginx 证书目录。列表和详情响应不返回私钥。
 type Certificate struct {
 	entity.Base
 	TenantID          uint       `gorm:"not null;uniqueIndex:idx_cert_name" json:"tenantId"`
@@ -41,6 +42,8 @@ type Certificate struct {
 	NotAfter          *time.Time `json:"notAfter,omitempty"`
 	Fingerprint       string     `gorm:"size:255" json:"fingerprint"`
 	CertPEM           string     `gorm:"type:text" json:"-"`
+	KeyPEM            string     `gorm:"type:text" json:"-"`
+	IssuerPEM         string     `gorm:"type:text" json:"-"`
 	LastError         string     `gorm:"type:text" json:"lastError"`
 	LastIssuedAt      *time.Time `json:"lastIssuedAt,omitempty"`
 	LastDeployedAt    *time.Time `json:"lastDeployedAt,omitempty"`
@@ -112,6 +115,20 @@ type CertificateDeployRequest struct {
 	ID uint `json:"id"`
 }
 
+type CertificateDownloadRequest struct {
+	ID       uint   `json:"id"`
+	Format   string `json:"format"`
+	Password string `json:"password"`
+}
+
+type CertificateDownload struct {
+	Filename      string     `json:"filename"`
+	ContentType   string     `json:"contentType"`
+	ContentBase64 string     `json:"contentBase64"`
+	Format        string     `json:"format"`
+	NotAfter      *time.Time `json:"notAfter,omitempty"`
+}
+
 type JobCreateRequest struct {
 	Name          string `json:"name"`
 	CertificateID uint   `json:"certificateId"`
@@ -158,6 +175,7 @@ type CertificateView struct {
 	NotBefore         *time.Time `json:"notBefore,omitempty"`
 	NotAfter          *time.Time `json:"notAfter,omitempty"`
 	Fingerprint       string     `json:"fingerprint"`
+	DaysRemaining     *int       `json:"daysRemaining,omitempty"`
 	LastError         string     `json:"lastError"`
 	LastIssuedAt      *time.Time `json:"lastIssuedAt,omitempty"`
 	LastDeployedAt    *time.Time `json:"lastDeployedAt,omitempty"`

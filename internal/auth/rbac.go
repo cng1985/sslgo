@@ -33,6 +33,7 @@ func PermissionCatalog() []Permission {
 		{"certificate", "delete", "删除证书"},
 		{"certificate", "issue", "签发证书"},
 		{"certificate", "deploy", "部署证书并重启 Nginx"},
+		{"certificate", "download", "下载 Nginx、httpd 或 IIS 证书"},
 		{"etlJob", "list", "查看签发流水线"},
 		{"etlJob", "detail", "查看流水线详情"},
 		{"etlJob", "create", "创建流水线"},
@@ -72,7 +73,7 @@ func BuiltinGrants(code string) map[string]struct{} {
 	case RoleOperator:
 		return pick(all,
 			"datasource:list", "datasource:detail", "datasource:create", "datasource:update", "datasource:delete", "datasource:test", "datasource:register", "datasource:catalog",
-			"certificate:list", "certificate:detail", "certificate:create", "certificate:update", "certificate:delete", "certificate:issue", "certificate:deploy",
+			"certificate:list", "certificate:detail", "certificate:create", "certificate:update", "certificate:delete", "certificate:issue", "certificate:deploy", "certificate:download",
 			"etlJob:list", "etlJob:detail", "etlJob:create", "etlJob:update", "etlJob:delete", "etlJob:execute",
 			"task:list", "task:detail",
 			"schedule:list", "schedule:create", "schedule:update", "schedule:delete", "schedule:enable", "schedule:disable",
