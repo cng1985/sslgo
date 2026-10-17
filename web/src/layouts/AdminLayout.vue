@@ -85,8 +85,19 @@ function logout() {
 </script>
 
 <style scoped>
-.shell { min-height: 100vh; display: grid; grid-template-columns: 232px 1fr; }
-.rail { background: var(--ink); color: #e7f0ea; padding: 22px 14px; }
+.shell {
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  overflow: hidden;
+}
+.rail {
+  background: var(--ink);
+  color: #e7f0ea;
+  padding: 22px 14px;
+  min-height: 0;
+  overflow-y: auto;
+}
 .logo { display: flex; gap: 12px; align-items: center; padding: 6px 10px 22px; }
 .logo strong { display: block; font-size: 22px; }
 .logo small { color: #b7c7be; }
@@ -96,19 +107,33 @@ function logout() {
   border: 1px solid #d7b56a; color: #f3d7a1;
   font-family: Palatino, "Songti SC", serif;
 }
-.main { min-width: 0; }
+.main {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .top {
-  height: 64px; display: flex; justify-content: space-between; align-items: center;
-  padding: 0 28px; border-bottom: 1px solid var(--line); background: rgba(255,253,248,.8);
+  flex: 0 0 64px;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 28px; border-bottom: 1px solid var(--line); background: rgba(255,253,248,.92);
 }
 .tenant { color: #66756d; }
 .who { display: flex; gap: 12px; align-items: center; }
-.content { padding: 26px 28px 40px; }
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 26px 28px 40px;
+}
 :deep(.el-menu) { border-right: 0; }
 :deep(.el-menu-item) { border-radius: 10px; margin-bottom: 4px; }
 :deep(.el-menu-item.is-active) { background: rgba(243, 215, 161, .12); }
 @media (max-width: 800px) {
-  .shell { grid-template-columns: 1fr; }
-  .rail { padding-bottom: 8px; }
+  .shell { height: auto; min-height: 100vh; grid-template-columns: 1fr; overflow: visible; }
+  .rail { padding-bottom: 8px; overflow: visible; }
+  .main { display: block; overflow: visible; }
+  .content { overflow: visible; }
 }
 </style>
