@@ -200,3 +200,7 @@ go test ./...
 ```
 
 集成测试使用内存签发器替换真实 ACME，并检查证书文件、Nginx 重启参数、RBAC、租户隔离和 SPA。
+
+## 开源协议
+
+本项目采用 [MIT License](LICENSE)。
