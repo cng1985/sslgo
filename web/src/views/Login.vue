@@ -4,11 +4,6 @@
     <div class="glow glow-b" aria-hidden="true"></div>
 
     <section class="hero">
-      <header class="brand">
-        <span class="mark">证</span>
-        <strong>证枢</strong>
-      </header>
-
       <div class="center">
         <p class="eyebrow">SSL 控制台</p>
         <h1>证书到期前，<br>它先替你办好。</h1>
@@ -45,7 +40,14 @@
     <section class="entry">
       <div class="card">
         <form @submit.prevent="submit">
-          <h2>登录</h2>
+          <div class="card-brand">
+            <span class="mark">证</span>
+            <span>
+              <strong>证枢</strong>
+              <small>SSL 控制台</small>
+            </span>
+          </div>
+          <h2>欢迎回来</h2>
           <p class="note">使用已分配的账号进入控制台</p>
 
           <label class="field" :class="{ bad: showUserError }" for="login-username">
@@ -158,17 +160,15 @@ async function submit() {
     radial-gradient(560px 340px at 30% 18%, rgba(20, 184, 132, 0.14), transparent 70%),
     linear-gradient(180deg, #101916 0%, #0c1210 100%);
 }
-.brand { display: flex; align-items: center; gap: 12px; }
 .mark {
-  width: 38px; height: 38px;
-  border-radius: 12px;
+  width: 44px; height: 44px;
+  border-radius: 14px;
   display: grid; place-items: center;
   background: linear-gradient(135deg, #19c48d, #0e6b52);
   color: #ffffff;
-  font-size: 18px;
-  box-shadow: 0 10px 26px rgba(20, 184, 132, 0.28);
+  font-size: 20px;
+  box-shadow: 0 10px 24px rgba(14, 107, 82, 0.26);
 }
-.brand strong { font-size: 19px; font-weight: 600; letter-spacing: 0.14em; }
 
 .center {
   flex: 1;
@@ -253,22 +253,33 @@ async function submit() {
   padding: 48px 32px;
 }
 .card {
-  width: min(420px, 100%);
+  width: min(440px, 100%);
   background: #ffffff;
   color: #0c1210;
-  border-radius: 24px;
-  padding: 42px 42px 36px;
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  border-radius: 28px;
+  padding: 40px 40px 32px;
+  border: 1px solid #e6ede9;
+  box-shadow:
+    0 1px 2px rgba(12, 18, 16, 0.06),
+    0 16px 40px rgba(0, 0, 0, 0.22);
 }
+.card-brand { display: flex; align-items: center; gap: 13px; }
+.card-brand > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.card-brand strong {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+.card-brand small { color: #8a9a93; font-size: 11px; letter-spacing: 0.16em; }
 .card h2 {
-  margin: 0;
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  margin: 30px 0 0;
+  font-family: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", Georgia, serif;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 .note {
-  margin: 10px 0 26px;
+  margin: 8px 0 28px;
   color: #6b7b74;
   font-size: 13.5px;
   line-height: 1.6;
@@ -306,26 +317,26 @@ async function submit() {
 
 .go {
   width: 100%;
-  height: 50px;
+  height: 52px;
   margin-top: 8px;
   border: 0;
-  border-radius: 12px;
-  letter-spacing: 0.08em;
+  border-radius: 14px;
+  letter-spacing: 0.1em;
   font-size: 15px;
   font-weight: 600;
-  background: #0e6b52;
-  --el-button-bg-color: #0e6b52;
-  --el-button-border-color: #0e6b52;
+  background: linear-gradient(90deg, #0c1412 0%, #14543f 58%, #0e6b52 100%);
+  --el-button-bg-color: transparent;
+  --el-button-border-color: transparent;
   --el-button-text-color: #ffffff;
-  --el-button-hover-bg-color: #14b884;
-  --el-button-hover-border-color: #14b884;
+  --el-button-hover-bg-color: transparent;
+  --el-button-hover-border-color: transparent;
   --el-button-hover-text-color: #ffffff;
-  --el-button-active-bg-color: #0b5a45;
-  --el-button-active-border-color: #0b5a45;
+  --el-button-active-bg-color: transparent;
+  --el-button-active-border-color: transparent;
   --el-button-active-text-color: #ffffff;
-  box-shadow: 0 12px 28px rgba(14, 107, 82, 0.28);
+  box-shadow: 0 14px 28px rgba(14, 107, 82, 0.24);
 }
-.go:hover { box-shadow: 0 14px 30px rgba(20, 184, 132, 0.32); }
+.go:hover { filter: brightness(1.06); box-shadow: 0 16px 32px rgba(14, 107, 82, 0.28); }
 .aside {
   margin: 18px 0 0;
   color: #93a3a0;
@@ -350,7 +361,8 @@ async function submit() {
   .lede { margin-top: 12px; font-size: 14px; }
   .preview { display: none; }
   .entry { padding: 24px 16px 40px; align-items: stretch; }
-  .card { width: 100%; padding: 30px 22px 28px; border-radius: 20px; }
+  .card { width: 100%; padding: 30px 22px 28px; border-radius: 24px; }
+  .card h2 { margin-top: 26px; font-size: 26px; }
   .foot { text-align: center; }
 }
 </style>
