@@ -5,27 +5,24 @@
 ## 目录
 
 ```text
-cmd/server/main.go          只负责启动
-scripts/install-linux.sh    Linux systemd 服务安装
-scripts/build-platforms.ps1 Windows 上生成各平台应用
-internal/app                Fx 根模块
-internal/config             配置加载
-internal/database           SQLite 迁移与初始化
-internal/server             Gin、POST 路由和 HTTP 生命周期
-internal/web                embed 的前端
-internal/auth               登录、JWT、RBAC
-internal/datasource         ACME 账户、云厂商 DNS 与 Nginx 目标
-internal/acme               ACME 账户注册，以及阿里云、腾讯云等 DNS-01
-internal/etl                证书与 Extract -> Transform -> Load
-internal/scheduler          Cron 续期
-internal/task               签发任务
-internal/common             统一响应与通用查询
-web                         Vue 3 源码
+cmd/server/main.go                 只调用 app.Run()
+internal/app                       组合根、迁移和初始化
+internal/platform                  配置、数据库、日志、认证、HTTP
+internal/modules/datasource        ACME 账户、DNS 与 Nginx 目标
+internal/modules/acme              ACME 注册与 DNS-01 适配
+internal/modules/certificate       证书、流水线和仪表盘
+internal/modules/task              签发任务
+internal/modules/schedule          Cron 续期
+internal/modules/query             白名单通用查询
+internal/modules/process           nginx / systemctl / service 白名单
+web                                Vue 源码与嵌入的 dist
+configs                            application.yaml 与 dev/pro
+scripts                            多平台构建和 Linux 安装
 ```
 
 ## Fx 模块
 
-`cmd/server/main.go` 调用 `app.Run()`。各业务模块自行 `fx.Provide` 仓储、服务、控制器，并用 `fx.Invoke` 注册路由。HTTP 服务、调度器和数据库迁移都挂在 Fx 生命周期上。
+`cmd/server/main.go` 调用 `app.Run()`。启动顺序是配置校验、迁移与初始化、调度器，然后 HTTP 开始监听。构造函数不迁移数据、也不启动后台循环。业务入口是各模块的 Resource：一个请求进，一个 `Response` 或 `PageResponse` 出。
 
 ## 数据库
 
@@ -109,7 +106,7 @@ HTTP-01 在签发前必须能通过 80 端口提供 `webroot/.well-known/acme-ch
 var Dist embed.FS
 ```
 
-`internal/web` 提供 `dist`。Gin 托管静态文件，未知的页面路径回退到 `index.html`，因此 Vue Router 的 history 模式可用。`/api` 只接受 POST。
+`web` 目录嵌入 `dist`。Gin 托管静态文件，未知的页面路径回退到 `index.html`，因此 Vue Router 的 history 模式可用。缺失的 JS、CSS 和图片返回 404。`/api` 只接受 POST。`GET /health/live` 与 `GET /health/ready` 返回真实的 200 或 503。
 
 ```sh
 cd web && npm install && npm run build
@@ -121,7 +118,7 @@ CGO_ENABLED=0 go build -o bin/sslplatform ./cmd/server
 
 ## SQLite 初始化
 
-配置见 `configs/config.yaml`，环境变量优先：
+配置见 `configs/application.yaml`。`APP_PROFILE=dev` 或 `pro` 会再加载对应文件，文件缺失则启动失败。环境变量和命令行在文件之后生效。旧的 `SSL_CONFIG` 仍可指向单独的配置文件。常用变量：
 
 | 变量 | 含义 |
 | --- | --- |
@@ -188,7 +185,7 @@ scripts\build-platforms.cmd -SkipWeb
 | --- | --- |
 | `sslplatform-linux-amd64` | 裸二进制，可直接交给安装脚本的 `--bin` |
 | `sslplatform-linux-armv7` | 32 位 ARM，`GOARM=7` |
-| `sslplatform-<系统>-<架构>.zip` | 程序、`configs/config.yaml` 和启动脚本 |
+| `sslplatform-<系统>-<架构>.zip` | 程序、`configs/application*.yaml` 和启动脚本 |
 | `SHA256SUMS.txt` | 上述文件的 SHA-256 |
 
 压缩包在对应目录下执行 `sslplatform`、`sslplatform.exe` 或 `start.sh` / `start.cmd`。版本号写入 `internal/appinfo.Version`。需要 Go 1.24 和 Node.js；前端已经构建过时可以用 `-SkipWeb`。

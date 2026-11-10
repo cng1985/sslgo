@@ -1,0 +1,221 @@
+package schedule
+
+import (
+	"context"
+	"log/slog"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/robfig/cron/v3"
+	"go.uber.org/fx"
+
+	"sslplatform/internal/modules/certificate"
+	"sslplatform/internal/platform/domain"
+	"sslplatform/internal/platform/errors"
+)
+
+type Resource struct {
+	repo    *Repository
+	etl     *certificate.Resource
+	cron    *cron.Cron
+	mu      sync.Mutex
+	entries map[uint]cron.EntryID
+	bound   map[uint]string
+	stop    chan struct{}
+}
+
+func NewResource(lc fx.Lifecycle, repo *Repository, pipelines *certificate.Resource) *Resource {
+	svc := &Resource{
+		repo:    repo,
+		etl:     pipelines,
+		cron:    cron.New(),
+		entries: map[uint]cron.EntryID{},
+		bound:   map[uint]string{},
+		stop:    make(chan struct{}),
+	}
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			if err := svc.Reload(ctx); err != nil {
+				return err
+			}
+			svc.cron.Start()
+			go svc.loop()
+			slog.Info("调度器已启动")
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			close(svc.stop)
+			done := svc.cron.Stop()
+			select {
+			case <-done.Done():
+			case <-ctx.Done():
+			}
+			return nil
+		},
+	})
+	return svc
+}
+
+func (s *Resource) create(ctx context.Context, tenantID uint, req CreateRequest) (*View, error) {
+	if strings.TrimSpace(req.Name) == "" {
+		return nil, apperror.New(400, "请填写调度名称")
+	}
+	if _, err := parseCron(req.Cron); err != nil {
+		return nil, err
+	}
+	if _, err := s.etl.DetailJob(ctx, &certificate.JobIDRequest{ID: req.ETLJobID}); err != nil {
+		return nil, err
+	}
+	next := nextRun(req.Cron)
+	item := &Schedule{
+		TenantID: tenantID, Name: strings.TrimSpace(req.Name), ETLJobID: req.ETLJobID,
+		Cron: strings.TrimSpace(req.Cron), Enabled: req.Enabled, NextRunAt: next,
+	}
+	if err := s.repo.Create(ctx, item); err != nil {
+		return nil, err
+	}
+	_ = s.Reload(ctx)
+	return toView(item), nil
+}
+
+func (s *Resource) update(ctx context.Context, tenantID uint, req UpdateRequest) (*View, error) {
+	item, err := s.repo.Get(ctx, tenantID, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(req.Name) != "" {
+		item.Name = strings.TrimSpace(req.Name)
+	}
+	if strings.TrimSpace(req.Cron) != "" {
+		if _, err := parseCron(req.Cron); err != nil {
+			return nil, err
+		}
+		item.Cron = strings.TrimSpace(req.Cron)
+		item.NextRunAt = nextRun(item.Cron)
+	}
+	if req.Enabled != nil {
+		item.Enabled = *req.Enabled
+	}
+	if err := s.repo.Save(ctx, item); err != nil {
+		return nil, err
+	}
+	_ = s.Reload(ctx)
+	return toView(item), nil
+}
+
+func (s *Resource) delete(ctx context.Context, tenantID, id uint) error {
+	if err := s.repo.Delete(ctx, tenantID, id); err != nil {
+		return err
+	}
+	_ = s.Reload(ctx)
+	return nil
+}
+
+func (s *Resource) enable(ctx context.Context, tenantID, id uint, enabled bool) (*View, error) {
+	return s.update(ctx, tenantID, UpdateRequest{ID: id, Enabled: &enabled})
+}
+
+func (s *Resource) list(ctx context.Context, tenantID uint, req ListRequest) ([]View, int, int, int64, error) {
+	page, size := domain.Norm(req.Page, req.Size)
+	rows, total, err := s.repo.List(ctx, tenantID, page, size, req.Filters)
+	if err != nil {
+		return nil, 0, 0, 0, err
+	}
+	views := make([]View, 0, len(rows))
+	for i := range rows {
+		views = append(views, *toView(&rows[i]))
+	}
+	return views, page, size, total, nil
+}
+
+func (s *Resource) Reload(ctx context.Context) error {
+	rows, err := s.repo.ListEnabled(ctx)
+	if err != nil {
+		return err
+	}
+	want := map[uint]Schedule{}
+	for _, row := range rows {
+		want[row.ID] = row
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, entry := range s.entries {
+		row, ok := want[id]
+		if !ok || s.bound[id] != row.Cron {
+			s.cron.Remove(entry)
+			delete(s.entries, id)
+			delete(s.bound, id)
+		}
+	}
+	for id, row := range want {
+		if _, ok := s.entries[id]; ok {
+			continue
+		}
+		scheduleID := row.ID
+		entryID, err := s.cron.AddFunc(row.Cron, func() { s.fire(scheduleID) })
+		if err != nil {
+			slog.Error("添加调度失败", "id", row.ID, "err", err)
+			continue
+		}
+		s.entries[id] = entryID
+		s.bound[id] = row.Cron
+	}
+	return nil
+}
+
+func (s *Resource) fire(id uint) {
+	ctx := context.Background()
+	item, err := s.repo.GetByID(ctx, id)
+	if err != nil || !item.Enabled {
+		return
+	}
+	ctx = domain.With(ctx, domain.Scope{TenantID: item.TenantID, System: true, Username: "scheduler"})
+	_, err = s.etl.Execute(ctx, &certificate.JobExecuteRequest{ID: item.ETLJobID, Force: false})
+	status := "triggered"
+	if err != nil {
+		status = "failed"
+		slog.Error("调度执行失败", "id", id, "err", err)
+	}
+	now := time.Now()
+	_ = s.repo.MarkRun(ctx, id, now, nextRun(item.Cron), status)
+}
+
+func (s *Resource) loop() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.stop:
+			return
+		case <-ticker.C:
+			if err := s.Reload(context.Background()); err != nil {
+				slog.Error("刷新调度失败", "err", err)
+			}
+		}
+	}
+}
+
+func parseCron(expr string) (cron.Schedule, error) {
+	parsed, err := cron.ParseStandard(strings.TrimSpace(expr))
+	if err != nil {
+		return nil, apperror.New(400, "Cron 表达式无效，请使用 5 段格式，例如 15 3 * * *")
+	}
+	return parsed, nil
+}
+
+func nextRun(expr string) *time.Time {
+	parsed, err := parseCron(expr)
+	if err != nil {
+		return nil
+	}
+	next := parsed.Next(time.Now())
+	return &next
+}
+
+func toView(item *Schedule) *View {
+	return &View{
+		ID: item.ID, Name: item.Name, ETLJobID: item.ETLJobID, Cron: item.Cron, Enabled: item.Enabled,
+		LastRunAt: item.LastRunAt, NextRunAt: item.NextRunAt, LastStatus: item.LastStatus, CreatedAt: item.CreatedAt,
+	}
+}

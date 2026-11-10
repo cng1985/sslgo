@@ -3,30 +3,39 @@ package app
 import (
 	"go.uber.org/fx"
 
-	"sslplatform/internal/auth"
-	"sslplatform/internal/common"
-	"sslplatform/internal/config"
-	"sslplatform/internal/database"
-	"sslplatform/internal/datasource"
-	"sslplatform/internal/etl"
-	"sslplatform/internal/scheduler"
-	"sslplatform/internal/server"
-	"sslplatform/internal/task"
-	"sslplatform/internal/web"
+	"sslplatform/internal/modules/certificate"
+	"sslplatform/internal/modules/datasource"
+	"sslplatform/internal/modules/query"
+	"sslplatform/internal/modules/schedule"
+	"sslplatform/internal/modules/task"
+	"sslplatform/internal/platform/auth"
+	"sslplatform/internal/platform/config"
+	"sslplatform/internal/platform/database"
+	"sslplatform/internal/platform/logging"
+	"sslplatform/internal/platform/middleware"
+	"sslplatform/internal/platform/server"
+	"sslplatform/web"
 )
 
-// Module 组装全部 Fx 模块。main 只负责启动。
+// Module 组合平台、业务模块和 Web。
 var Module = fx.Module(
 	"app",
 	config.Module,
 	database.Module,
+	fx.Provide(Bootstrap),
+	loggingInvoke(),
 	auth.Module,
+	middleware.Module,
 	datasource.Module,
 	task.Module,
-	etl.Module,
-	scheduler.Module,
-	common.Module,
+	certificate.Module,
+	schedule.Module,
+	query.Module,
 	web.Module,
 	server.Module,
 	fx.Invoke(announce),
 )
+
+func loggingInvoke() fx.Option {
+	return fx.Invoke(func(cfg *config.Config) { logging.Apply(cfg) })
+}
