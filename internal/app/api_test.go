@@ -23,9 +23,9 @@ import (
 	"software.sslmate.com/src/go-pkcs12"
 
 	"sslplatform/internal/app"
-	"sslplatform/internal/auth"
-	"sslplatform/internal/etl"
-	"sslplatform/internal/server"
+	"sslplatform/internal/modules/certificate"
+	"sslplatform/internal/platform/auth"
+	"sslplatform/internal/platform/server"
 )
 
 func TestPlatformFlow(t *testing.T) {
@@ -53,7 +53,9 @@ func TestPlatformFlow(t *testing.T) {
 	application := fx.New(
 		app.Module,
 		fx.Populate(&endpoint, &db),
-		fx.Decorate(func(etl.CertificateIssuer) etl.CertificateIssuer { return etl.NewMemoryIssuer() }),
+		fx.Decorate(func(certificate.CertificateIssuer) certificate.CertificateIssuer {
+			return certificate.NewMemoryIssuer()
+		}),
 		fx.WithLogger(func() fxevent.Logger { return fxevent.NopLogger }),
 	)
 	startCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -388,6 +390,18 @@ func TestPlatformFlow(t *testing.T) {
 	home, homeBody := raw(t, http.MethodGet, base, "/", "", nil)
 	if home != http.StatusOK || !strings.Contains(homeBody, `id="app"`) {
 		t.Fatalf("SPA status=%d body=%s", home, homeBody)
+	}
+	live, liveBody := raw(t, http.MethodGet, base, "/health/live", "", nil)
+	if live != http.StatusOK || !strings.Contains(liveBody, `"live"`) {
+		t.Fatalf("live status=%d body=%s", live, liveBody)
+	}
+	ready, readyBody := raw(t, http.MethodGet, base, "/health/ready", "", nil)
+	if ready != http.StatusOK || !strings.Contains(readyBody, `"ready"`) {
+		t.Fatalf("ready status=%d body=%s", ready, readyBody)
+	}
+	missing, missingBody := raw(t, http.MethodGet, base, "/assets/missing.js", "", nil)
+	if missing != http.StatusNotFound || strings.Contains(missingBody, `id="app"`) {
+		t.Fatalf("缺失脚本应返回 404，status=%d body=%s", missing, missingBody)
 	}
 	catalog := decodeData(t, mustPost(t, base, "/api/v1/system/catalog", token, map[string]any{}, 200))
 	routes, _ := catalog["routes"].([]any)

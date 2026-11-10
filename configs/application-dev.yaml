@@ -1,0 +1,5 @@
+server:
+  mode: debug
+logging:
+  level: debug
+  format: text

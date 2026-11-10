@@ -1,0 +1,191 @@
+package datasource
+
+import (
+	"github.com/gin-gonic/gin"
+
+	"sslplatform/internal/platform/bind"
+	"sslplatform/internal/platform/response"
+	"sslplatform/internal/platform/routing"
+)
+
+type Controller struct {
+	svc *Resource
+}
+
+func NewController(svc *Resource) *Controller {
+	return &Controller{svc: svc}
+}
+
+func RegisterRouter(r routing.Router, c *Controller) {
+	r.Protected(routing.Meta{
+		Resource: "datasource", Action: "create", Path: "/datasource/create",
+		Summary: "创建 ACME 账户或 Nginx 部署目标",
+		Fields: []routing.Field{
+			{Name: "name", Type: "string", Required: true, Description: "数据源名称"},
+			{Name: "type", Type: "string", Required: true, Description: "acme 或 nginx"},
+			{Name: "description", Type: "string", Required: false, Description: "说明"},
+			{Name: "config", Type: "object", Required: true, Description: "acme: email、ca、directoryURL、eabKid、eabHmacKey、termsAgreed、dnsProvider、dns、register；nginx: nginxBin、serviceManager、serviceName、action、webroot、certDir、testBefore、dryRun。部署只按域名覆盖 certDir 中的 pem 与 key，然后重启 Nginx，不修改配置文件"},
+		},
+	}, c.Create)
+	r.Protected(routing.Meta{
+		Resource: "datasource", Action: "update", Path: "/datasource/update",
+		Summary: "更新数据源。未提交的 ACME 私钥会保留",
+		Fields: []routing.Field{
+			{Name: "id", Type: "number", Required: true, Description: "数据源 ID"},
+			{Name: "name", Type: "string", Required: false, Description: "名称"},
+			{Name: "description", Type: "string", Required: false, Description: "说明"},
+			{Name: "status", Type: "string", Required: false, Description: "active 或 disabled"},
+			{Name: "config", Type: "object", Required: false, Description: "新配置，省略则不修改"},
+		},
+	}, c.Update)
+	r.Protected(routing.Meta{
+		Resource: "datasource", Action: "delete", Path: "/datasource/delete",
+		Summary: "删除未被证书引用的数据源",
+		Fields:  []routing.Field{{Name: "id", Type: "number", Required: true, Description: "数据源 ID"}},
+	}, c.Delete)
+	r.Protected(routing.Meta{
+		Resource: "datasource", Action: "detail", Path: "/datasource/detail",
+		Summary: "查看数据源，响应不包含账户私钥",
+		Fields:  []routing.Field{{Name: "id", Type: "number", Required: true, Description: "数据源 ID"}},
+	}, c.Detail)
+	r.Protected(routing.Meta{
+		Resource: "datasource", Action: "list", Path: "/datasource/list",
+		Summary: "分页查询当前租户数据源",
+		Fields: []routing.Field{
+			{Name: "page", Type: "number", Required: false, Description: "页码"},
+			{Name: "size", Type: "number", Required: false, Description: "每页条数"},
+			{Name: "filters.type", Type: "string", Required: false, Description: "acme 或 nginx"},
+			{Name: "filters.keyword", Type: "string", Required: false, Description: "名称关键字"},
+			{Name: "filters.status", Type: "string", Required: false, Description: "状态"},
+		},
+	}, c.List)
+	r.Protected(routing.Meta{
+		Resource: "datasource", Action: "test", Path: "/datasource/test",
+		Summary: "测试 ACME 目录连通性，或执行 nginx -t",
+		Fields:  []routing.Field{{Name: "id", Type: "number", Required: true, Description: "数据源 ID"}},
+	}, c.Test)
+	r.Protected(routing.Meta{
+		Resource: "datasource", Action: "register", Path: "/datasource/register",
+		Summary: "向证书机构注册 ACME 账户，并保存账户地址",
+		Fields: []routing.Field{
+			{Name: "id", Type: "number", Required: true, Description: "ACME 数据源 ID"},
+			{Name: "agreeTos", Type: "boolean", Required: true, Description: "是否同意 ACME 服务条款"},
+		},
+	}, c.Register)
+	r.Protected(routing.Meta{
+		Resource: "datasource", Action: "catalog", Path: "/datasource/catalog",
+		Summary: "列出可注册的 ACME 证书机构和可对接的云厂商 DNS",
+	}, c.Catalog)
+}
+
+func (c *Controller) Create(ctx *gin.Context) {
+	var req CreateRequest
+	if err := bind.JSON(ctx, &req); err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	result, err := c.svc.Create(ctx.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	response.SuccessResponse(ctx, result)
+}
+
+func (c *Controller) Update(ctx *gin.Context) {
+	var req UpdateRequest
+	if err := bind.JSON(ctx, &req); err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	result, err := c.svc.Update(ctx.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	response.SuccessResponse(ctx, result)
+}
+
+func (c *Controller) Delete(ctx *gin.Context) {
+	var req IDRequest
+	if err := bind.JSON(ctx, &req); err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	result, err := c.svc.Delete(ctx.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	response.SuccessResponse(ctx, result)
+}
+
+func (c *Controller) Detail(ctx *gin.Context) {
+	var req IDRequest
+	if err := bind.JSON(ctx, &req); err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	result, err := c.svc.Detail(ctx.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	response.SuccessResponse(ctx, result)
+}
+
+func (c *Controller) List(ctx *gin.Context) {
+	var req ListRequest
+	if err := bind.JSON(ctx, &req); err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	result, err := c.svc.List(ctx.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	response.SuccessPage(ctx, result)
+}
+
+func (c *Controller) Register(ctx *gin.Context) {
+	var req RegisterAccountRequest
+	if err := bind.JSON(ctx, &req); err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	result, err := c.svc.Register(ctx.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	response.SuccessResponse(ctx, result)
+}
+
+func (c *Controller) Catalog(ctx *gin.Context) {
+	var req CatalogRequest
+	if err := bind.JSON(ctx, &req); err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	result, err := c.svc.Catalog(ctx.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	response.SuccessResponse(ctx, result)
+}
+
+func (c *Controller) Test(ctx *gin.Context) {
+	var req IDRequest
+	if err := bind.JSON(ctx, &req); err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	result, err := c.svc.Test(ctx.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(ctx, err)
+		return
+	}
+	response.SuccessResponse(ctx, result)
+}

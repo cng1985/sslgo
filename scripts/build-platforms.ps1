@@ -102,7 +102,7 @@ function Get-Targets {
 
 function Build-Web {
     param([string]$Root)
-    $distIndex = Join-Path $Root "internal\web\dist\index.html"
+    $distIndex = Join-Path $Root "web\dist\index.html"
     if ($SkipWeb) {
         if (-not (Test-Path $distIndex)) {
             throw "已指定 -SkipWeb，但缺少 $distIndex"
@@ -169,7 +169,9 @@ function New-Package {
         Write-Utf8NoBom (Join-Path $stage "start.sh") $launcher
     }
     Copy-Item $BinaryPath (Join-Path $stage $exeName)
-    Copy-Item (Join-Path $Root "configs\config.yaml") (Join-Path $stage "configs\config.yaml")
+    Copy-Item (Join-Path $Root "configs\application.yaml") (Join-Path $stage "configs\application.yaml")
+    Copy-Item (Join-Path $Root "configs\application-dev.yaml") (Join-Path $stage "configs\application-dev.yaml")
+    Copy-Item (Join-Path $Root "configs\application-pro.yaml") (Join-Path $stage "configs\application-pro.yaml")
     if (Test-Path $ZipPath) {
         Remove-Item $ZipPath -Force
     }

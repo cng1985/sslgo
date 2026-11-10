@@ -13,8 +13,8 @@ import (
 	"go.uber.org/fx/fxevent"
 
 	"sslplatform/internal/app"
-	"sslplatform/internal/logging"
-	"sslplatform/internal/server"
+	"sslplatform/internal/platform/logging"
+	"sslplatform/internal/platform/server"
 )
 
 func TestStartupLogFormat(t *testing.T) {

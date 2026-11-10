@@ -1,0 +1,40 @@
+app:
+  name: sslplatform
+server:
+  host: 127.0.0.1
+  port: 8080
+  mode: release
+  read_header_timeout: 5s
+  idle_timeout: 60s
+  shutdown_timeout: 30s
+  request_timeout: 120s
+  sse_timeout: 15m
+  max_body_bytes: 2097152
+  trusted_proxies: []
+database:
+  enabled: true
+  driver: sqlite
+  max_open_conns: 1
+  max_idle_conns: 1
+  conn_max_lifetime: 30m
+  batch_size: 100
+  sqlite:
+    path: sslplatform.db
+    foreign_keys: true
+    busy_timeout: 5s
+    journal_mode: WAL
+auth:
+  enabled: true
+  jwt_secret: change-me-please-32chars!!
+  session_ttl: 24h
+acme:
+  directory_url: https://acme-staging-v02.api.letsencrypt.org/directory
+  timeout: 120s
+logging:
+  level: info
+  format: text
+seed:
+  admin_user: admin
+  admin_password: Admin@123456
+  acme_email: admin@example.com
+  bootstrap_nginx: false

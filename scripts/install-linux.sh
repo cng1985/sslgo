@@ -166,7 +166,7 @@ build_binary() {
   out=$2
   command -v go >/dev/null 2>&1 || die "未找到 go，无法 --build"
   [ -f "$root/go.mod" ] || die "未找到源码目录，无法 --build"
-  [ -f "$root/internal/web/dist/index.html" ] || die "缺少前端产物 internal/web/dist，请先在 web 目录执行 npm install && npm run build"
+  [ -f "$root/web/dist/index.html" ] || die "缺少前端产物 web/dist，请先在 web 目录执行 npm install && npm run build"
   info "正在编译 $out"
   (cd "$root" && CGO_ENABLED=0 go build -trimpath -o "$out" ./cmd/server)
 }

@@ -10,7 +10,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-COPY --from=web /src/internal/web/dist ./internal/web/dist
+COPY --from=web /src/web/dist ./web/dist
 RUN CGO_ENABLED=0 go build -o /out/sslplatform ./cmd/server
 
 FROM debian:bookworm-slim
