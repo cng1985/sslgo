@@ -7,14 +7,25 @@
           <path d="m8.6 12.05 2.35 2.3 4.45-4.7" />
         </svg>
       </div>
-      <div class="lockup">
-        <strong>证枢</strong>
-        <small>SSL 控制台</small>
-        <p class="slogan">证书到期前，它先替你办好</p>
+
+      <header class="brand">证枢</header>
+
+      <div class="copy">
+        <h1>证书到期前，<br>它先替你办好。</h1>
+        <p class="lede">向证书机构免费申请，自动续期，写进 Nginx 后再重启。</p>
         <ul class="traits">
-          <li>免费证书</li>
-          <li>自动续期</li>
-          <li>检测通过再重启 Nginx</li>
+          <li>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 8.5 3.2 3 6.8-7" /></svg>
+            免费证书，支持通配符
+          </li>
+          <li>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 8.5 3.2 3 6.8-7" /></svg>
+            到期自动续期
+          </li>
+          <li>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 8.5 3.2 3 6.8-7" /></svg>
+            检测通过再重启 Nginx
+          </li>
         </ul>
       </div>
     </section>
@@ -113,71 +124,87 @@ async function submit() {
 .hero {
   position: relative;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px;
+  flex-direction: column;
+  padding: 48px 52px;
   background: #0a1613;
   color: #e7f4ee;
   overflow: hidden;
 }
 .rings {
   position: absolute;
-  inset: 0;
+  right: -140px;
+  bottom: -180px;
+  width: 520px;
+  height: 520px;
+  border-radius: 50%;
+  border: 1px solid rgba(231, 244, 238, 0.12);
   display: grid;
   place-items: center;
   color: #37d3a0;
+  opacity: 0.85;
 }
-.rings::before,
-.rings::after {
+.rings::before {
   content: "";
-  position: absolute;
+  width: 360px;
+  height: 360px;
   border-radius: 50%;
   border: 1px solid rgba(231, 244, 238, 0.14);
 }
-.rings::before { width: min(480px, 62vw); aspect-ratio: 1; }
-.rings::after { width: min(680px, 88vw); aspect-ratio: 1; }
 .shield {
-  width: 88px;
-  height: 88px;
-  opacity: 0.9;
+  position: absolute;
+  width: 96px;
+  height: 96px;
 }
-.lockup {
+
+.brand {
   position: relative;
   z-index: 1;
-  margin-top: 132px;
-  text-align: center;
-}
-.lockup strong {
-  display: block;
-  font-size: 30px;
+  font-size: 19px;
   font-weight: 600;
   letter-spacing: 0.42em;
   text-indent: 0.42em;
 }
-.lockup small {
-  display: block;
-  margin-top: 10px;
-  color: rgba(231, 244, 238, 0.56);
-  font-size: 12px;
-  letter-spacing: 0.26em;
+
+.copy {
+  position: relative;
+  z-index: 1;
+  margin-top: 12vh;
+  max-width: 460px;
 }
-.slogan {
-  margin: 28px 0 0;
-  font-size: 18px;
-  letter-spacing: 0.1em;
-  text-indent: 0.1em;
+.copy h1 {
+  margin: 0;
+  font-size: 44px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+}
+.lede {
+  margin: 22px 0 0;
+  max-width: 26em;
+  color: rgba(231, 244, 238, 0.66);
+  font-size: 15px;
+  line-height: 1.8;
 }
 .traits {
   list-style: none;
-  margin: 16px 0 0;
+  margin: 44px 0 0;
   padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.traits li {
   display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px 22px;
-  color: rgba(231, 244, 238, 0.62);
-  font-size: 13px;
-  letter-spacing: 0.04em;
+  align-items: center;
+  gap: 10px;
+  color: rgba(231, 244, 238, 0.74);
+  font-size: 14px;
+  letter-spacing: 0.03em;
+}
+.traits svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: #37d3a0;
 }
 
 .entry {
@@ -268,14 +295,14 @@ async function submit() {
 
 @media (max-width: 860px) {
   .login { grid-template-columns: 1fr; }
-  .hero { padding: 40px 20px 36px; }
-  .rings::before { width: 240px; }
-  .rings::after { width: 360px; }
-  .shield { width: 60px; height: 60px; }
-  .lockup { margin-top: 88px; }
-  .lockup strong { font-size: 24px; }
-  .slogan { margin-top: 20px; font-size: 16px; }
-  .traits { gap: 6px 16px; }
-  .entry { padding: 32px 20px 48px; }
+  .hero { padding: 24px 20px 30px; }
+  .rings { width: 300px; height: 300px; right: -130px; bottom: -120px; opacity: 0.5; }
+  .rings::before { width: 200px; height: 200px; }
+  .shield { width: 56px; height: 56px; }
+  .copy { margin-top: 26px; }
+  .copy h1 { font-size: 28px; line-height: 1.35; }
+  .lede { margin-top: 12px; font-size: 14px; }
+  .traits { display: none; }
+  .entry { padding: 28px 20px 44px; }
 }
 </style>
