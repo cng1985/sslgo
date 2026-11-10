@@ -10,6 +10,12 @@
       <div class="lockup">
         <strong>证枢</strong>
         <small>SSL 控制台</small>
+        <p class="slogan">证书到期前，它先替你办好</p>
+        <ul class="traits">
+          <li>免费证书</li>
+          <li>自动续期</li>
+          <li>检测通过再重启 Nginx</li>
+        </ul>
       </div>
     </section>
 
@@ -155,6 +161,24 @@ async function submit() {
   font-size: 12px;
   letter-spacing: 0.26em;
 }
+.slogan {
+  margin: 28px 0 0;
+  font-size: 18px;
+  letter-spacing: 0.1em;
+  text-indent: 0.1em;
+}
+.traits {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  color: rgba(231, 244, 238, 0.62);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
 
 .entry {
   display: flex;
@@ -250,6 +274,8 @@ async function submit() {
   .shield { width: 60px; height: 60px; }
   .lockup { margin-top: 88px; }
   .lockup strong { font-size: 24px; }
+  .slogan { margin-top: 20px; font-size: 16px; }
+  .traits { gap: 6px 16px; }
   .entry { padding: 32px 20px 48px; }
 }
 </style>
